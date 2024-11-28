@@ -5,9 +5,9 @@ const options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "Store Management API",
+      title: "PitShop API",
       version: "1.0.0",
-      description: "API documentation for Store Management System",
+      description: "API documentation for PitShop System",
     },
     servers: [
       {

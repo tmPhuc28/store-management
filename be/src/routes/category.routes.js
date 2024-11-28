@@ -17,23 +17,76 @@ const {
   createCategoryValidator,
   updateCategoryValidator,
 } = require("../validators/category.validator");
-
-const protectedRouter = express.Router();
-const adminRouter = express.Router();
-
+const {
+  statusValidator,
+  paginationValidator,
+  objectIdValidator,
+  sortValidator,
+  searchValidator,
+} = require("../validators/common.validator");
 /**
  * @swagger
  * tags:
  *   name: Categories
- *   description: Quản lý danh mục sản phẩm
+ *   description: Product category management
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Category:
+ *       type: object
+ *       required:
+ *         - name
+ *       properties:
+ *         _id:
+ *           type: string
+ *           description: Auto-generated ID
+ *         name:
+ *           type: string
+ *           description: Category name
+ *         description:
+ *           type: string
+ *           description: Category description
+ *         parentCategory:
+ *           type: string
+ *           description: Parent category ID
+ *         status:
+ *           type: number
+ *           enum: [0, 1]
+ *           description: Status (0=inactive, 1=active)
+ *         createdBy:
+ *           type: string
+ *           description: ID of the creator
+ *         updateHistory:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               updatedBy:
+ *                 type: string
+ *               timestamp:
+ *                 type: string
+ *                 format: date-time
+ *               changes:
+ *                 type: object
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  */
 
 /**
  * @swagger
  * /api/v1/categories:
  *   get:
- *     summary: Get all categories
+ *     summary: Get a list of categories
  *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: page
@@ -51,41 +104,94 @@ const adminRouter = express.Router();
  *         name: search
  *         schema:
  *           type: string
- *         description: Search categories by name or description
+ *         description: Search by name or description
  *       - in: query
  *         name: status
  *         schema:
  *           type: integer
  *           enum: [0, 1]
  *         description: Filter by status
+ *       - in: query
+ *         name: parent
+ *         schema:
+ *           type: string
+ *         description: Filter by parent category (null to get root categories)
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *         description: Sort by (e.g., -createdAt, name)
  *     responses:
  *       200:
  *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 count:
+ *                   type: integer
+ *                 total:
+ *                   type: integer
+ *                 totalPages:
+ *                   type: integer
+ *                 currentPage:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Category'
  */
-protectedRouter.get("/", getCategories);
+router.get(
+  "/",
+  protect,
+  paginationValidator,
+  sortValidator,
+  searchValidator,
+  getCategories
+);
 
 /**
  * @swagger
  * /api/v1/categories/top:
  *   get:
- *     summary: Lấy danh sách category cấp cao nhất
+ *     summary: Get the top-level categories
  *     tags: [Categories]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: onlyActive
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Only get active categories
  *     responses:
  *       200:
- *         description: Thành công
- *       401:
- *         description: Chưa xác thực
- *       500:
- *         description: Lỗi server
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 count:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Category'
  */
-protectedRouter.get("/top", protect, getTopCategories);
+router.get("/top", protect, getTopCategories);
+
 /**
  * @swagger
  * /api/v1/categories/leaves:
  *   get:
- *     summary: Lấy danh sách category không có con
+ *     summary: Get categories without subcategories
  *     tags: [Categories]
  *     security:
  *       - bearerAuth: []
@@ -95,23 +201,34 @@ protectedRouter.get("/top", protect, getTopCategories);
  *         schema:
  *           type: boolean
  *           default: true
- *         description: Chỉ lấy category đang active
+ *         description: Only get active categories
  *     responses:
  *       200:
- *         description: Thành công
- *       401:
- *         description: Chưa xác thực
- *       500:
- *         description: Lỗi server
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 count:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Category'
  */
-protectedRouter.get("/leaves", protect, getLeafCategories);
+router.get("/leaves", protect, getLeafCategories);
 
 /**
  * @swagger
  * /api/v1/categories/{id}:
  *   get:
- *     summary: Get category by ID
+ *     summary: Get information of a category
  *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -122,16 +239,23 @@ protectedRouter.get("/leaves", protect, getLeafCategories);
  *     responses:
  *       200:
  *         description: Success
- *       404:
- *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Category'
  */
-protectedRouter.get("/:id", getCategory);
+router.get("/:id", protect, objectIdValidator(), getCategory);
 
 /**
  * @swagger
  * /api/v1/categories/{id}/path:
  *   get:
- *     summary: Lấy đường dẫn từ gốc đến category hiện tại
+ *     summary: Get the path from root to the current category
  *     tags: [Categories]
  *     security:
  *       - bearerAuth: []
@@ -141,24 +265,31 @@ protectedRouter.get("/:id", getCategory);
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của category
+ *         description: Category ID
  *     responses:
  *       200:
- *         description: Thành công
- *       401:
- *         description: Chưa xác thực
- *       404:
- *         description: Không tìm thấy category
- *       500:
- *         description: Lỗi server
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 pathLength:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Category'
  */
-protectedRouter.get("/:id/path", protect, getCategoryPath);
+router.get("/:id/path", protect, objectIdValidator(), getCategoryPath);
 
 /**
  * @swagger
  * /api/v1/categories:
  *   post:
- *     summary: Create new category (Admin only)
+ *     summary: Create a new category (Admin)
  *     tags: [Categories]
  *     security:
  *       - bearerAuth: []
@@ -170,38 +301,46 @@ protectedRouter.get("/:id/path", protect, getCategoryPath);
  *             type: object
  *             required:
  *               - name
- *               - description
  *             properties:
  *               name:
  *                 type: string
- *                 example: Electronics
+ *                 maxLength: 50
  *               description:
  *                 type: string
- *                 example: Electronic devices and accessories
+ *                 maxLength: 500
+ *               parentCategory:
+ *                 type: string
+ *                 description: Parent category ID
  *               status:
  *                 type: number
  *                 enum: [0, 1]
- *                 example: 1
- *               parentCategory:
- *                 type: string
- *                 example: 60d725c3e95d1d2b9c8c2c31
+ *                 default: 1
  *     responses:
  *       201:
- *         description: Category created successfully
- *       400:
- *         description: Validation error or category already exists
- *       401:
- *         description: Not authorized
- *       403:
- *         description: Admin access required
+ *         description: Created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Category'
  */
-adminRouter.post("/", createCategoryValidator, createCategory);
+router.post(
+  "/",
+  protect,
+  authorize("admin"),
+  createCategoryValidator,
+  createCategory
+);
 
 /**
  * @swagger
  * /api/v1/categories/{id}:
  *   put:
- *     summary: Update category (Admin only)
+ *     summary: Update a category (Admin)
  *     tags: [Categories]
  *     security:
  *       - bearerAuth: []
@@ -221,52 +360,45 @@ adminRouter.post("/", createCategoryValidator, createCategory);
  *             properties:
  *               name:
  *                 type: string
- *                 example: Updated Electronics
+ *                 maxLength: 50
  *               description:
  *                 type: string
- *                 example: Updated description
+ *                 maxLength: 500
+ *               parentCategory:
+ *                 type: string
  *               status:
  *                 type: number
  *                 enum: [0, 1]
  *     responses:
  *       200:
- *         description: Category updated successfully
- *       404:
- *         description: Category not found
+ *         description: Updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Category'
  */
-adminRouter.put("/:id", updateCategoryValidator, updateCategory);
-
-/**
- * @swagger
- * /api/v1/categories/{id}:
- *   delete:
- *     summary: Delete category (Admin only)
- *     tags: [Categories]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Category ID
- *     responses:
- *       200:
- *         description: Category deleted successfully
- *       400:
- *         description: Cannot delete category with subcategories
- *       404:
- *         description: Category not found
- */
-adminRouter.delete("/:id", deleteCategory);
+router.put(
+  "/:id",
+  protect,
+  authorize("admin"),
+  objectIdValidator(),
+  updateCategoryValidator,
+  updateCategory
+);
 
 /**
  * @swagger
  * /api/v1/categories/{id}/status:
  *   patch:
+ *     summary: Update category status (Admin)
  *     tags: [Categories]
- *     summary: Update category status
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -286,16 +418,66 @@ adminRouter.delete("/:id", deleteCategory);
  *               status:
  *                 type: number
  *                 enum: [0, 1]
- *                 description: "0 = inactive, 1 = active"
  *     responses:
  *       200:
- *         description: Category status updated successfully
+ *         description: Updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Category'
+ */
+router.patch(
+  "/:id/status",
+  protect,
+  authorize("admin"),
+  objectIdValidator(),
+  statusValidator,
+  updateCategoryStatus
+);
+
+/**
+ * @swagger
+ * /api/v1/categories/{id}:
+ *   delete:
+ *     summary: Delete a category (Admin)
+ *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Category ID
+ *     responses:
+ *       200:
+ *         description: Deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Cannot delete category with subcategories
  *       404:
  *         description: Category not found
  */
-adminRouter.patch("/:id/status", updateCategoryStatus);
-
-router.use("/", protect, protectedRouter);
-router.use("/", protect, authorize("admin"), adminRouter);
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  objectIdValidator(),
+  deleteCategory
+);
 
 module.exports = router;

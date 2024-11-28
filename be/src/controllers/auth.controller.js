@@ -1,35 +1,42 @@
 // src/controllers/auth.controller.js
-const User = require("../models/User");
 const { validationResult } = require("express-validator");
-const { logAction, logger } = require("../utils/logger");
-const authLog = logAction("User");
-const { validateUserStatusChange } = require("../utils/statusValidator");
-const { findUserAndCheckStatus } = require("../services/auth.service");
+const authService = require("../services/auth.service");
 
 // Helper function to send token response
-const sendTokenResponse = (user, statusCode, res) => {
-  const token = user.getSignedJwtToken();
+const sendTokenResponse = (res, statusCode, tokens, user) => {
+  const { accessToken, refreshToken, cookieOptions } = tokens;
 
-  const options = {
-    expires: new Date(
-      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
-    ),
-    httpOnly: true,
-  };
-
-  if (process.env.NODE_ENV === "production") {
-    options.secure = true;
+  // Set cookies
+  res.cookie("accessToken", accessToken, cookieOptions);
+  if (refreshToken) {
+    res.cookie("refreshToken", refreshToken, {
+      ...cookieOptions,
+      expires: new Date(
+        Date.now() + process.env.REFRESH_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
+      ),
+    });
   }
 
-  res.status(statusCode).cookie("token", token, options).json({
+  // Send response
+  res.status(statusCode).json({
     success: true,
-    token,
+    data: {
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        status: user.statusText,
+      },
+      tokens: {
+        accessToken,
+        refreshToken,
+      },
+    },
   });
 };
 
-// @desc    Register user
-// @route   POST /api/v1/auth/register
-// @access  Public
 exports.register = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -37,41 +44,29 @@ exports.register = async (req, res, next) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { username, email, password, role } = req.body;
+    const reqInfo = {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    };
 
-    // Check if email or username already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }],
-    });
+    const user = await authService.register(req.body, reqInfo);
+    const tokens = authService.createTokenResponse(
+      user,
+      user.generateRefreshToken()
+    );
 
-    if (existingUser) {
-      let conflictField = existingUser.email === email ? "Email" : "Username";
+    sendTokenResponse(res, 201, tokens, user);
+  } catch (error) {
+    if (error.message.includes("already registered")) {
       return res.status(400).json({
         success: false,
-        message: `${conflictField} already registered`,
+        message: error.message,
       });
     }
-
-    // Create user
-    const user = await User.create({
-      username,
-      email,
-      password,
-      role: role || "user",
-    });
-
-    await user.logActivity("register", { email, username });
-    authLog.success("New user registered", { email, username });
-
-    sendTokenResponse(user, 201, res);
-  } catch (error) {
     next(error);
   }
 };
 
-// @desc    Login user
-// @route   POST /api/v1/auth/login
-// @access  Public
 exports.login = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -79,58 +74,110 @@ exports.login = async (req, res, next) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { login, password } = req.body;
+    const reqInfo = {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    };
 
-    const user = await findUserAndCheckStatus(login);
+    const { user, accessToken, refreshToken } = await authService.login(
+      req.body,
+      reqInfo
+    );
 
-    // Check if password matches
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) {
+    sendTokenResponse(res, 200, { accessToken, refreshToken }, user);
+  } catch (error) {
+    if (
+      error.message === "Invalid credentials" ||
+      error.message.includes("inactive")
+    ) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials",
+        message: error.message,
+      });
+    }
+    next(error);
+  }
+};
+
+exports.refresh = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: "Please provide refresh token",
       });
     }
 
-    await user.logActivity("login", {
-      loginMethod: login.includes("@") ? "email" : "username",
-    });
+    const reqInfo = {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    };
 
-    logger.info(`User logged in: ${user.email}`);
-
-    sendTokenResponse(user, 200, res);
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Logout user
-// @route   GET /api/v1/auth/logout
-// @access  Private
-exports.logout = async (req, res, next) => {
-  try {
-    await req.user.logActivity("logout", { email: req.user.email });
-
-    res.cookie("token", "none", {
-      expires: new Date(Date.now() + 10 * 1000),
-      httpOnly: true,
-    });
+    const tokens = await authService.refreshToken(refreshToken, reqInfo);
 
     res.status(200).json({
       success: true,
-      message: "User logged out successfully",
+      data: tokens,
+    });
+  } catch (error) {
+    if (error.message === "Invalid refresh token") {
+      return res.status(401).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    next(error);
+  }
+};
+
+exports.logout = async (req, res, next) => {
+  try {
+    const reqInfo = {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    };
+
+    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+    await authService.logout(req.user, refreshToken, reqInfo);
+
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+
+    res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get current logged in user
-// @route   GET /api/v1/auth/me
-// @access  Private
+exports.logoutAll = async (req, res, next) => {
+  try {
+    const reqInfo = {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    };
+
+    await authService.logoutAll(req.user, reqInfo);
+
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+
+    res.status(200).json({
+      success: true,
+      message: "Logged out from all devices successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await authService.findUserAndCheckStatus(req.user._id);
     res.status(200).json({
       success: true,
       data: user,
@@ -140,9 +187,6 @@ exports.getMe = async (req, res, next) => {
   }
 };
 
-// @desc    Change password
-// @route   PUT /api/v1/auth/changepassword
-// @access  Private
 exports.changePassword = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -150,222 +194,34 @@ exports.changePassword = async (req, res, next) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const user = await User.findById(req.user.id).select("+password");
-
-    // Check current password
-    const isMatch = await user.matchPassword(req.body.currentPassword);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Current password is incorrect",
-      });
-    }
-
-    user.password = req.body.newPassword;
-    await user.save();
-    await user.logActivity("change_password", { email: user.email });
-
-    sendTokenResponse(user, 200, res);
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get all users
-// @route   GET /api/v1/auth/users
-// @access  Private/Admin
-exports.getAllUsers = async (req, res, next) => {
-  try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const startIndex = (page - 1) * limit;
-    const status = req.query.status;
-
-    if (status) {
-      query.status = status;
-    }
-    const total = await User.countDocuments();
-    const users = await User.find()
-      .select("-password")
-      .skip(startIndex)
-      .limit(limit);
-
-    res.status(200).json({
-      success: true,
-      count: users.length,
-      total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      data: users,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get single user
-// @route   GET /api/v1/auth/users/:id
-// @access  Private/Admin
-exports.getUser = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id).select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: user,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Update user
-// @route   PUT /api/v1/auth/users/:id
-// @access  Private/Admin
-exports.updateUser = async (req, res, next) => {
-  try {
-    const fieldsToUpdate = {
-      username: req.body.username,
-      email: req.body.email,
-      role: req.body.role,
+    const reqInfo = {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
     };
 
-    // Only add status if it's provided and valid
-    if (req.body.status !== undefined) {
-      const status = parseInt(req.body.status);
-      if (status === 0 || status === 1) {
-        fieldsToUpdate.status = status;
-      }
-    }
-
-    const existingUser = await User.findOne({
-      $or: [
-        { email: fieldsToUpdate.email },
-        { username: fieldsToUpdate.username },
-      ],
-      _id: { $ne: req.params.id }, // Loại trừ user hiện tại
-    });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "Email or username already in use",
-      });
-    }
-
-    const user = await User.findByIdAndUpdate(req.params.id, fieldsToUpdate, {
-      new: true,
-      runValidators: true,
-    }).select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    await user.logActivity("profile_updated", {
-      updatedBy: req.user.id,
-      changes: fieldsToUpdate,
-    });
+    const { accessToken, refreshToken } = await authService.changePassword(
+      req.user,
+      req.body.currentPassword,
+      req.body.newPassword,
+      reqInfo
+    );
 
     res.status(200).json({
       success: true,
-      data: user,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Delete user
-// @route   DELETE /api/v1/auth/users/:id
-// @access  Private/Admin
-exports.deleteUser = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    // Prevent admin from deleting themselves
-    if (user._id.toString() === req.user.id) {
-      return res.status(400).json({
-        success: false,
-        message: "You cannot delete yourself",
-      });
-    }
-
-    await user.deleteOne();
-
-    await req.user.logActivity("user_deleted", {
-      deletedUser: user.email,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "User deleted successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Update user status
-// @route   PATCH /api/v1/auth/users/:id/status
-// @access  Private/Admin
-exports.updateUserStatus = async (req, res, next) => {
-  try {
-    const { status } = req.body;
-    const statusNum = parseInt(status);
-
-    const user = await User.findById(req.params.id);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    // Sử dụng validator cho user
-    const validation = validateUserStatusChange(user, statusNum, req.user);
-    if (!validation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: validation.message,
-      });
-    }
-
-    const updateUser = await User.findByIdAndUpdate(
-      req.params.id,
-      {
-        status: statusNum,
-        $push: {
-          activityLog: {
-            action: "status_updated",
-            details: { status: statusNum },
-          },
+      data: {
+        tokens: {
+          accessToken,
+          refreshToken,
         },
       },
-      { new: true }
-    ).select("-password");
-
-    res.status(200).json({
-      success: true,
-      data: updateUser,
     });
   } catch (error) {
+    if (error.message === "Current password is incorrect") {
+      return res.status(401).json({
+        success: false,
+        message: error.message,
+      });
+    }
     next(error);
   }
 };

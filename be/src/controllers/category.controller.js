@@ -1,12 +1,10 @@
 // src/controllers/category.controller.js
 const { validationResult } = require("express-validator");
 const categoryService = require("../services/category.service");
-const { logAction } = require("../utils/logger");
-const categoryLog = logAction("Category");
 
 exports.getCategories = async (req, res, next) => {
   try {
-    const result = await categoryService.getCategories(req.query);
+    const result = await categoryService.getCategories(req.query, req.user);
     res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);
@@ -15,7 +13,10 @@ exports.getCategories = async (req, res, next) => {
 
 exports.getCategory = async (req, res, next) => {
   try {
-    const category = await categoryService.getCategoryById(req.params.id);
+    const category = await categoryService.getCategoryById(
+      req.params.id,
+      req.user
+    );
     res.status(200).json({ success: true, data: category });
   } catch (error) {
     if (error.message === "Category not found") {
@@ -36,6 +37,8 @@ exports.createCategory = async (req, res, next) => {
     }
 
     const category = await categoryService.create(req.body, req.user);
+
+    // Populate references for response
     await category.populate([
       { path: "parentCategory", select: "name" },
       { path: "createdBy", select: "username email" },
@@ -74,6 +77,8 @@ exports.updateCategory = async (req, res, next) => {
       req.body,
       req.user
     );
+
+    // Populate references for response
     await category.populate([
       { path: "parentCategory", select: "name" },
       { path: "createdBy", select: "username email" },
@@ -105,7 +110,7 @@ exports.deleteCategory = async (req, res, next) => {
   try {
     const result = await categoryService.deleteCategory(
       req.params.id,
-      req.user._id
+      req.user
     );
     res.status(200).json({
       success: true,
@@ -130,15 +135,29 @@ exports.deleteCategory = async (req, res, next) => {
 
 exports.updateCategoryStatus = async (req, res, next) => {
   try {
-    const updatedCategory = await categoryService.updateCategoryStatus(
+    const updatedCategory = await categoryService.updateStatus(
       req.params.id,
-      req.body.status,
-      req.user._id
+      parseInt(req.body.status),
+      req.user
     );
+
+    // Populate references for response
+    await updatedCategory.populate([
+      { path: "parentCategory", select: "name" },
+      { path: "createdBy", select: "username email" },
+      { path: "updateHistory.updatedBy", select: "username email" },
+    ]);
+
     res.status(200).json({ success: true, data: updatedCategory });
   } catch (error) {
     if (error.message === "Category not found") {
       return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    if (error.message.includes("Status must be")) {
+      return res.status(400).json({
         success: false,
         message: error.message,
       });
@@ -150,9 +169,7 @@ exports.updateCategoryStatus = async (req, res, next) => {
 exports.getLeafCategories = async (req, res, next) => {
   try {
     const activeOnly = req.query.activeOnly !== "false";
-    const categories = await categoryService.getLeafCategories({
-      activeOnly,
-    });
+    const categories = await categoryService.getLeafCategories({ activeOnly });
 
     res.status(200).json({
       success: true,
@@ -167,9 +184,7 @@ exports.getLeafCategories = async (req, res, next) => {
 exports.getTopCategories = async (req, res, next) => {
   try {
     const onlyActive = req.query.onlyActive !== "false";
-    const categories = await categoryService.getTopCategories({
-      onlyActive,
-    });
+    const categories = await categoryService.getTopCategories({ onlyActive });
 
     res.status(200).json({
       success: true,
@@ -183,7 +198,7 @@ exports.getTopCategories = async (req, res, next) => {
 
 exports.getCategoryPath = async (req, res, next) => {
   try {
-    const path = await categoryService.getCategoryPath(req.params.id);
+    const path = await categoryService.getCategoryPath(req.params.id, req.user);
 
     res.status(200).json({
       success: true,
@@ -200,3 +215,5 @@ exports.getCategoryPath = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports = exports;

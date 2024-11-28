@@ -10,6 +10,7 @@ const swaggerSpec = require("./config/swagger");
 
 // Import routes
 const authRoutes = require("./routes/auth.routes");
+const userRoutes = require("./routes/user.routes");
 const productRoutes = require("./routes/product.routes");
 const categoryRoutes = require("./routes/category.routes");
 const customerRoutes = require("./routes/customer.routes");
@@ -19,30 +20,57 @@ const discountRoutes = require("./routes/discount.routes");
 // Initialize express app
 const app = express();
 
+// CORS Configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Cho phép các origins được cấu hình trong env
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(",")
+      : ["http://localhost:3000"]; // Default cho development
+
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true, // Cho phép gửi cookies qua CORS
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+  exposedHeaders: ["set-cookie"],
+};
+
 // Security Middleware
 app.use(helmet());
+app.use(cors(corsOptions));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: process.env.RATE_LIMIT_WINDOW * 60 * 1000, // 15 minutes
-  max: process.env.RATE_LIMIT_MAX, // limit each IP to 100 requests per windowMs
-});
-app.use(limiter);
+// Cookie Parser
+app.use(cookieParser(process.env.COOKIE_SECRET));
 
 // Body Parser Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Cookie Parser
-app.use(cookieParser());
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: process.env.RATE_LIMIT_WINDOW * 60 * 1000,
+  max: process.env.RATE_LIMIT_MAX,
+});
+app.use(limiter);
 
-// CORS
-app.use(
-  cors({
-    origin: process.env.ALLOWED_ORIGINS.split(","),
-    credentials: true,
-  })
-);
+// Mount routes
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/categories", categoryRoutes);
+app.use("/api/v1/customers", customerRoutes);
+app.use("/api/v1/invoices", invoiceRoutes);
+app.use("/api/v1/discounts", discountRoutes);
 
 // Swagger UI options
 const swaggerUiOptions = {
@@ -62,14 +90,6 @@ app.get("/swagger.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.send(swaggerSpec);
 });
-
-// Mount routes
-app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/products", productRoutes);
-app.use("/api/v1/categories", categoryRoutes);
-app.use("/api/v1/customers", customerRoutes);
-app.use("/api/v1/invoices", invoiceRoutes);
-app.use("/api/v1/discounts", discountRoutes);
 
 // Error Handler Middleware
 const errorHandler = require("./middleware/error");
