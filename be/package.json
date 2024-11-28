@@ -1,0 +1,45 @@
+{
+  "name": "pitshop",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tmPhuc28/store-management.git"
+  },
+  "author": "pit",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tmPhuc28/store-management/issues"
+  },
+  "homepage": "https://github.com/tmPhuc28/store-management#readme",
+  "description": "Store Management System Backend",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "bwip-js": "^4.5.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.1",
+    "express-validator": "^7.2.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.8.2",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.15.1",
+    "qrcode": "^1.5.4",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.7",
+    "supertest": "^7.0.0"
+  }
+}
