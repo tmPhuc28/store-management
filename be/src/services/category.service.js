@@ -338,12 +338,7 @@ class CategoryService {
 
   // Helper methods
   async validateCategoryName(name, excludeId = null) {
-    return checkDuplicate(
-      this.model,
-      { name },
-      excludeId,
-      "Active category with this name already exists"
-    );
+    return checkDuplicate(this.model, { name }, excludeId);
   }
 
   async validateParentCategory(parentId, categoryId = null) {

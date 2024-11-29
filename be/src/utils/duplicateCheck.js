@@ -26,7 +26,8 @@ const checkDuplicate = async (
 
   if (exists) {
     throw new Error(
-      message || `Active ${Model.modelName} with these details already exists`
+      message ||
+        `Active ${Model.modelName} with the same ${conditions} already exists`
     );
   }
 

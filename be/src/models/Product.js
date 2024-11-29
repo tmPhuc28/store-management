@@ -96,7 +96,31 @@ const productSchema = new mongoose.Schema(
       default: 1,
       required: true,
     },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     images: [String],
+    stockAlert: {
+      enabled: {
+        type: Boolean,
+        default: true, // Mặc định bật cảnh báo
+      },
+      threshold: {
+        type: Number,
+        default: 10,
+        min: 0,
+      },
+      status: {
+        type: String,
+        enum: ["normal", "warning", "critical"],
+        default: "normal",
+      },
+      lastNotified: {
+        type: Date,
+      },
+    },
     updateHistory: [
       {
         action: String,
@@ -141,6 +165,55 @@ productSchema.pre("save", async function (next) {
   }
   next();
 });
+
+// Phương thức kiểm tra và cập nhật trạng thái cảnh báo
+productSchema.methods.updateStockStatus = function () {
+  if (!this.stockAlert.enabled) {
+    this.stockAlert.status = "normal";
+    return null;
+  }
+
+  const stockPercentage = (this.quantity / this.stockAlert.threshold) * 100;
+
+  let status;
+  let alertType;
+  let message;
+
+  if (this.quantity <= 0) {
+    status = "critical";
+    alertType = "error";
+    message = `Out of stock: ${this.name}`;
+  } else if (this.quantity <= this.stockAlert.threshold / 2) {
+    status = "critical";
+    alertType = "error";
+    message = `Critical low stock: ${this.name} - Only ${this.quantity} items remaining`;
+  } else if (this.quantity <= this.stockAlert.threshold) {
+    status = "warning";
+    alertType = "warning";
+    message = `Low stock warning: ${this.name} - ${this.quantity} items remaining`;
+  } else {
+    status = "normal";
+    alertType = null;
+    message = null;
+  }
+
+  this.stockAlert.status = status;
+
+  if (status !== "normal") {
+    return {
+      productId: this._id,
+      name: this.name,
+      quantity: this.quantity,
+      threshold: this.stockAlert.threshold,
+      status,
+      alertType,
+      message,
+      timestamp: new Date(),
+    };
+  }
+
+  return null;
+};
 
 // Method để lấy thông tin đầy đủ về category path
 productSchema.methods.getFullCategoryInfo = async function () {

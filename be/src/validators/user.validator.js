@@ -1,6 +1,5 @@
 // src/validators/user.validator.js
 const { body } = require("express-validator");
-const { statusValidator } = require("./common.validator");
 
 // User update validation
 exports.updateUserValidator = [

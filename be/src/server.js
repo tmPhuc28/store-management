@@ -1,5 +1,8 @@
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
+const socketIO = require("socket.io");
+const StockAlertService = require("./services/stockAlert.service");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -11,6 +14,7 @@ const swaggerSpec = require("./config/swagger");
 // Import routes
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
+const storeRoutes = require("./routes/store.routes");
 const productRoutes = require("./routes/product.routes");
 const categoryRoutes = require("./routes/category.routes");
 const customerRoutes = require("./routes/customer.routes");
@@ -19,6 +23,20 @@ const discountRoutes = require("./routes/discount.routes");
 
 // Initialize express app
 const app = express();
+
+const server = http.createServer(app);
+const io = socketIO(server, {
+  cors: {
+    origin: process.env.ALLOWED_ORIGINS.split(","),
+    credentials: true,
+  },
+});
+
+// Khởi tạo StockAlertService với io
+const stockAlertService = new StockAlertService(io);
+
+// Lưu service vào app để sử dụng trong routes
+app.set("stockAlertService", stockAlertService);
 
 // CORS Configuration
 const corsOptions = {
@@ -66,6 +84,7 @@ app.use(limiter);
 // Mount routes
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/store", storeRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/customers", customerRoutes);
@@ -113,6 +132,23 @@ mongoose
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
+
+// Socket.IO connection handling
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+
+  // Gửi danh sách cảnh báo hiện tại khi client kết nối
+  stockAlertService
+    .getActiveAlerts()
+    .then((alerts) => {
+      socket.emit("initialAlerts", alerts);
+    })
+    .catch(console.error);
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (err) => {

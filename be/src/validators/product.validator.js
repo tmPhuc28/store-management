@@ -1,6 +1,5 @@
 // src/validators/product.validator.js
 const { body } = require("express-validator");
-const { statusValidator } = require("./common.validator");
 
 exports.createProductValidator = [
   body("name")

@@ -9,8 +9,6 @@ exports.createCategoryValidator = [
     .withMessage("Category name is required")
     .isLength({ max: 50 })
     .withMessage("Name cannot be more than 50 characters"),
-
-  statusValidator,
 ];
 
 exports.updateCategoryValidator = [

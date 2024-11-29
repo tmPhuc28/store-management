@@ -1,6 +1,5 @@
 // src/middleware/auth.js
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
 const authService = require("../services/auth.service");
 const { logAction } = require("../utils/logger");
 

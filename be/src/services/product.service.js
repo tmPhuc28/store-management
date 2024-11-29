@@ -159,6 +159,7 @@ class ProductService {
         barcode,
         qrCode,
         categoryPath,
+        createdBy: user._id,
         status: data.status !== undefined ? parseInt(data.status) : 1,
         finalPrice: data.price, // Initial price without discount
         updateHistory: [createHistoryRecord(user, normalizedData, "create")],
@@ -258,34 +259,24 @@ class ProductService {
     }
   }
 
-  // Helper methods
-  async buildCategoryPath(categoryId) {
-    const categoryPath = [];
-    let currentCat = await Category.findById(categoryId);
+  async updateQuantity(id, quantity, user) {
+    try {
+      const product = await this.model.findById(id);
+      if (!product) {
+        throw new Error("Product not found");
+      }
 
-    while (currentCat) {
-      categoryPath.unshift(currentCat._id);
-      if (!currentCat.parentCategory) break;
-      currentCat = await Category.findById(currentCat.parentCategory);
+      product.quantity = quantity;
+      await product.save();
+
+      // Kiểm tra cảnh báo tồn kho
+      const stockAlertService = req.app.get("stockAlertService");
+      await stockAlertService.checkAndNotify(product);
+
+      return product;
+    } catch (error) {
+      throw error;
     }
-
-    return categoryPath;
-  }
-
-  calculateFinalPrice(basePrice, discount) {
-    if (!discount || !discount.isActive) {
-      return basePrice;
-    }
-
-    const now = new Date();
-    if (
-      (!discount.startDate || now >= discount.startDate) &&
-      (!discount.endDate || now <= discount.endDate)
-    ) {
-      return basePrice * (1 - discount.percentage / 100);
-    }
-
-    return basePrice;
   }
 
   async getProductById(id, user) {
@@ -420,6 +411,35 @@ class ProductService {
     }
   }
 
+  // Helper methods
+  async buildCategoryPath(categoryId) {
+    const categoryPath = [];
+    let currentCat = await Category.findById(categoryId);
+
+    while (currentCat) {
+      categoryPath.unshift(currentCat._id);
+      if (!currentCat.parentCategory) break;
+      currentCat = await Category.findById(currentCat.parentCategory);
+    }
+
+    return categoryPath;
+  }
+
+  calculateFinalPrice(basePrice, discount) {
+    if (!discount || !discount.isActive) {
+      return basePrice;
+    }
+
+    const now = new Date();
+    if (
+      (!discount.startDate || now >= discount.startDate) &&
+      (!discount.endDate || now <= discount.endDate)
+    ) {
+      return basePrice * (1 - discount.percentage / 100);
+    }
+
+    return basePrice;
+  }
   // Helper method for bulk price updates
   async updatePricesByCategory(categoryId, adjustment, adjustmentType, user) {
     try {
