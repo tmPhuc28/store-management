@@ -96,7 +96,13 @@ router.get(
  *       200:
  *         description: User retrieved successfully
  */
-router.get("/:id", protect, authorize("admin"), objectIdValidator(), getUser);
+router.get(
+  "/:id",
+  protect,
+  authorize("admin"),
+  objectIdValidator("id"),
+  getUser
+);
 
 /**
  * @swagger
@@ -153,7 +159,7 @@ router.put(
   "/:id",
   protect,
   authorize("admin"),
-  objectIdValidator(),
+  objectIdValidator("id"),
   updateUserValidator,
   validateUserUpdate, // Custom middleware for sensitive fields
   updateUser
@@ -193,7 +199,7 @@ router.patch(
   "/:id/status",
   protect,
   authorize("admin"),
-  objectIdValidator(),
+  objectIdValidator("id"),
   statusValidator,
   updateUserStatus
 );
@@ -220,7 +226,7 @@ router.delete(
   "/:id",
   protect,
   authorize("admin"),
-  objectIdValidator(),
+  objectIdValidator("id"),
   deleteUser
 );
 

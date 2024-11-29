@@ -99,6 +99,7 @@ const productSchema = new mongoose.Schema(
     images: [String],
     updateHistory: [
       {
+        action: String,
         updatedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
