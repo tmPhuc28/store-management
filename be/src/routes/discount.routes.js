@@ -1,32 +1,89 @@
 // src/routes/discount.routes.js
 const express = require("express");
 const router = express.Router();
-const {
-  getDiscounts,
-  createDiscount,
-  validateDiscount,
-  updateDiscountStatus,
-  deleteDiscount,
-} = require("../controllers/discount.controller");
 const { protect, authorize } = require("../middleware/auth");
+const discountController = require("../controllers/discount.controller");
 const {
   createDiscountValidator,
-  validateDiscountCodeValidator,
+  updateDiscountValidator,
+  validateDiscountValidator,
   updateDiscountStatusValidator,
+  getDiscountsValidator,
 } = require("../validators/discount.validator");
+const { objectIdValidator } = require("../validators/common.validator");
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Discount:
+ *       type: object
+ *       required:
+ *         - code
+ *         - description
+ *         - type
+ *         - value
+ *         - startDate
+ *       properties:
+ *         code:
+ *           type: string
+ *           description: Unique discount code
+ *           example: "SUMMER2024"
+ *         description:
+ *           type: string
+ *           description: Discount description
+ *           example: "Summer sale discount"
+ *         type:
+ *           type: string
+ *           enum: [percentage, fixed]
+ *           example: "percentage"
+ *         value:
+ *           type: number
+ *           description: Discount value (percentage or fixed amount)
+ *           example: 10
+ *         minOrderValue:
+ *           type: number
+ *           description: Minimum order value required
+ *           example: 100000
+ *         maxDiscount:
+ *           type: number
+ *           description: Maximum discount amount for percentage type
+ *           example: 50000
+ *         startDate:
+ *           type: string
+ *           format: date-time
+ *           example: "2024-06-01T00:00:00.000Z"
+ *         endDate:
+ *           type: string
+ *           format: date-time
+ *           example: "2024-06-30T23:59:59.999Z"
+ *         usageLimit:
+ *           type: integer
+ *           description: Maximum number of times discount can be used
+ *           example: 100
+ *         usedCount:
+ *           type: integer
+ *           description: Number of times discount has been used
+ *           example: 0
+ *         status:
+ *           type: integer
+ *           enum: [0, 1]
+ *           description: 0=inactive, 1=active
+ *           example: 1
+ */
 
 /**
  * @swagger
  * tags:
  *   name: Discounts
- *   description: Quản lý mã giảm giá
+ *   description: Discount code management
  */
 
 /**
  * @swagger
  * /api/v1/discounts:
  *   get:
- *     summary: Lấy danh sách mã giảm giá
+ *     summary: Get all discounts
  *     tags: [Discounts]
  *     security:
  *       - bearerAuth: []
@@ -35,120 +92,48 @@ const {
  *         name: page
  *         schema:
  *           type: integer
- *           default: 1
- *         description: Số trang
+ *         description: Page number
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
- *           default: 10
- *         description: Số lượng mỗi trang
+ *         description: Results per page
  *       - in: query
  *         name: status
  *         schema:
  *           type: integer
  *           enum: [0, 1]
- *         description: Lọc theo trạng thái
+ *         description: Filter by status
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [percentage, fixed]
+ *         description: Filter by type
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: boolean
+ *         description: Filter currently active discounts
  *     responses:
  *       200:
- *         description: Thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 count:
- *                   type: integer
- *                 total:
- *                   type: integer
- *                 totalPages:
- *                   type: integer
- *                 currentPage:
- *                   type: integer
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Discount'
+ *         description: Success
  */
-router.get("/", protect, getDiscounts);
-
-/**
- * @swagger
- * /api/v1/discounts:
- *   post:
- *     summary: Tạo mã giảm giá mới
- *     tags: [Discounts]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - code
- *               - description
- *               - type
- *               - value
- *               - minOrderValue
- *               - maxDiscount
- *               - startDate
- *               - endDate
- *               - usageLimit
- *             properties:
- *               code:
- *                 type: string
- *                 description: Mã giảm giá
- *               description:
- *                 type: string
- *                 description: Mô tả mã giảm giá
- *               type:
- *                 type: string
- *                 enum: [percentage, fixed]
- *                 description: Loại giảm giá
- *               value:
- *                 type: number
- *                 description: Giá trị giảm giá
- *               minOrderValue:
- *                 type: number
- *                 description: Giá trị đơn hàng tối thiểu
- *               maxDiscount:
- *                 type: number
- *                 description: Giá trị giảm tối đa (chỉ áp dụng cho loại percentage)
- *               startDate:
- *                 type: string
- *                 format: date-time
- *                 description: Ngày bắt đầu
- *               endDate:
- *                 type: string
- *                 format: date-time
- *                 description: Ngày kết thúc
- *               usageLimit:
- *                 type: integer
- *                 description: Giới hạn sử dụng (null = không giới hạn)
- *     responses:
- *       201:
- *         description: Tạo thành công
- *       400:
- *         description: Dữ liệu không hợp lệ hoặc mã đã tồn tại
- */
-router.post(
+router.get(
   "/",
   protect,
-  authorize("admin"),
-  createDiscountValidator,
-  createDiscount
+  getDiscountsValidator,
+  discountController.getDiscounts
 );
 
 /**
  * @swagger
  * /api/v1/discounts/validate:
  *   post:
- *     summary: Kiểm tra và tính toán giá trị giảm giá
+ *     summary: Validate a discount code
  *     tags: [Discounts]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -161,43 +146,69 @@ router.post(
  *             properties:
  *               code:
  *                 type: string
- *                 description: Mã giảm giá
  *               orderValue:
  *                 type: number
- *                 description: Giá trị đơn hàng
  *     responses:
  *       200:
- *         description: Thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     code:
- *                       type: string
- *                     type:
- *                       type: string
- *                     value:
- *                       type: number
- *                     discountAmount:
- *                       type: number
- *       400:
- *         description: Mã không hợp lệ hoặc không thể áp dụng
- *       404:
- *         description: Không tìm thấy mã giảm giá
+ *         description: Success
  */
-router.post("/validate", validateDiscountCodeValidator, validateDiscount);
+router.post(
+  "/validate",
+  protect,
+  validateDiscountValidator,
+  discountController.validateDiscount
+);
 
 /**
  * @swagger
- * /api/v1/discounts/{id}/status:
- *   patch:
- *     summary: Cập nhật trạng thái mã giảm giá
+ * /api/v1/discounts/statistics:
+ *   get:
+ *     summary: Get discount statistics (Admin)
+ *     tags: [Discounts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/statistics",
+  protect,
+  authorize("admin"),
+  discountController.getDiscountStatistics
+);
+
+/**
+ * @swagger
+ * /api/v1/discounts:
+ *   post:
+ *     summary: Create new discount (Admin)
+ *     tags: [Discounts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Discount'
+ *     responses:
+ *       201:
+ *         description: Discount created successfully
+ */
+router.post(
+  "/",
+  protect,
+  authorize("admin"),
+  createDiscountValidator,
+  discountController.createDiscount
+);
+
+/**
+ * @swagger
+ * /api/v1/discounts/{id}:
+ *   put:
+ *     summary: Update discount (Admin)
  *     tags: [Discounts]
  *     security:
  *       - bearerAuth: []
@@ -207,7 +218,38 @@ router.post("/validate", validateDiscountCodeValidator, validateDiscount);
  *         required: true
  *         schema:
  *           type: string
- *         description: ID mã giảm giá
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Discount'
+ *     responses:
+ *       200:
+ *         description: Discount updated successfully
+ */
+router.put(
+  "/:id",
+  protect,
+  authorize("admin"),
+  [objectIdValidator("id"), updateDiscountValidator],
+  discountController.updateDiscount
+);
+
+/**
+ * @swagger
+ * /api/v1/discounts/{id}/status:
+ *   patch:
+ *     summary: Update discount status (Admin)
+ *     tags: [Discounts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
  *       required: true
  *       content:
@@ -218,28 +260,25 @@ router.post("/validate", validateDiscountCodeValidator, validateDiscount);
  *               - status
  *             properties:
  *               status:
- *                 type: number
+ *                 type: integer
  *                 enum: [0, 1]
- *                 description: "0 = inactive, 1 = active"
  *     responses:
  *       200:
- *         description: Cập nhật thành công
- *       404:
- *         description: Không tìm thấy mã giảm giá
+ *         description: Status updated successfully
  */
 router.patch(
   "/:id/status",
   protect,
   authorize("admin"),
-  updateDiscountStatusValidator,
-  updateDiscountStatus
+  [objectIdValidator("id"), updateDiscountStatusValidator],
+  discountController.updateDiscountStatus
 );
 
 /**
  * @swagger
  * /api/v1/discounts/{id}:
  *   delete:
- *     summary: Xóa mã giảm giá
+ *     summary: Delete discount (Admin)
  *     tags: [Discounts]
  *     security:
  *       - bearerAuth: []
@@ -249,15 +288,16 @@ router.patch(
  *         required: true
  *         schema:
  *           type: string
- *         description: ID mã giảm giá
  *     responses:
  *       200:
- *         description: Xóa thành công
- *       400:
- *         description: Không thể xóa mã đã được sử dụng
- *       404:
- *         description: Không tìm thấy mã giảm giá
+ *         description: Discount deleted successfully
  */
-router.delete("/:id", protect, authorize("admin"), deleteDiscount);
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  objectIdValidator("id"),
+  discountController.deleteDiscount
+);
 
 module.exports = router;

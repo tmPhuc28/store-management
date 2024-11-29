@@ -6,46 +6,48 @@ exports.createCustomerValidator = [
     .trim()
     .notEmpty()
     .withMessage("Customer name is required")
-    .isLength({ max: 100 })
-    .withMessage("Name cannot be more than 100 characters"),
-
-  body("email")
-    .optional()
-    .trim()
-    .isEmail()
-    .withMessage("Please provide a valid email")
-    .normalizeEmail(),
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Name must be between 2 and 100 characters"),
 
   body("phone")
     .trim()
     .notEmpty()
     .withMessage("Phone number is required")
     .matches(/^[0-9+\-\s()]*$/)
-    .withMessage("Please provide a valid phone number"),
+    .withMessage("Invalid phone number format")
+    .isLength({ min: 10, max: 15 })
+    .withMessage("Phone number must be between 10 and 15 characters"),
+
+  body("email")
+    .optional()
+    .trim()
+    .isEmail()
+    .withMessage("Invalid email format")
+    .normalizeEmail(),
 
   body("address.detail")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Detail must be a string"),
+    .isLength({ max: 200 })
+    .withMessage("Address detail cannot exceed 200 characters"),
 
   body("address.ward")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Ward must be a string"),
+    .isLength({ max: 100 })
+    .withMessage("Ward name cannot exceed 100 characters"),
 
   body("address.district")
     .optional()
     .trim()
-    .isString()
-    .withMessage("District must be a string"),
+    .isLength({ max: 100 })
+    .withMessage("District name cannot exceed 100 characters"),
 
   body("address.province")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Province must be a string"),
+    .isLength({ max: 100 })
+    .withMessage("Province name cannot exceed 100 characters"),
 
   body("status")
     .optional()
@@ -56,58 +58,57 @@ exports.createCustomerValidator = [
   body("notes")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Notes must be a string"),
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot exceed 500 characters"),
 ];
 
 exports.updateCustomerValidator = [
   body("name")
     .optional()
     .trim()
-    .isLength({ max: 100 })
-    .withMessage("Name cannot be more than 100 characters"),
-
-  body("email")
-    .optional()
-    .trim()
-    .isEmail()
-    .withMessage("Please provide a valid email")
-    .normalizeEmail(),
+    .notEmpty()
+    .withMessage("Name cannot be empty if provided")
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Name must be between 2 and 100 characters"),
 
   body("phone")
     .optional()
     .trim()
     .matches(/^[0-9+\-\s()]*$/)
-    .withMessage("Please provide a valid phone number"),
+    .withMessage("Invalid phone number format")
+    .isLength({ min: 10, max: 15 })
+    .withMessage("Phone number must be between 10 and 15 characters"),
 
-  body("address")
+  body("email")
     .optional()
-    .isObject()
-    .withMessage("Address must be an object"),
+    .trim()
+    .isEmail()
+    .withMessage("Invalid email format")
+    .normalizeEmail(),
 
   body("address.detail")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Detail must be a string"),
+    .isLength({ max: 200 })
+    .withMessage("Address detail cannot exceed 200 characters"),
 
   body("address.ward")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Ward must be a string"),
+    .isLength({ max: 100 })
+    .withMessage("Ward name cannot exceed 100 characters"),
 
   body("address.district")
     .optional()
     .trim()
-    .isString()
-    .withMessage("District must be a string"),
+    .isLength({ max: 100 })
+    .withMessage("District name cannot exceed 100 characters"),
 
   body("address.province")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Province must be a string"),
+    .isLength({ max: 100 })
+    .withMessage("Province name cannot exceed 100 characters"),
 
   body("status")
     .optional()
@@ -118,6 +119,6 @@ exports.updateCustomerValidator = [
   body("notes")
     .optional()
     .trim()
-    .isString()
-    .withMessage("Notes must be a string"),
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot exceed 500 characters"),
 ];

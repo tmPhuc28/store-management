@@ -1,36 +1,97 @@
 // src/routes/invoice.routes.js
 const express = require("express");
 const router = express.Router();
-const {
-  getInvoices,
-  getInvoice,
-  createInvoice,
-  updateInvoiceStatus,
-  updatePaymentStatus,
-  cancelInvoice,
-  getInvoiceStatistics,
-  getCustomerInvoices,
-} = require("../controllers/invoice.controller");
-const { protect } = require("../middleware/auth");
+const { protect, authorize } = require("../middleware/auth");
+const invoiceController = require("../controllers/invoice.controller");
 const {
   createInvoiceValidator,
-  updateStatusValidator,
   updatePaymentStatusValidator,
+  getInvoicesValidator,
+  getStatisticsValidator,
+  exportInvoicesValidator,
 } = require("../validators/invoice.validator");
+const { objectIdValidator } = require("../validators/common.validator");
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     InvoiceItem:
+ *       type: object
+ *       required:
+ *         - product
+ *         - quantity
+ *       properties:
+ *         product:
+ *           type: string
+ *           description: Product ID
+ *         quantity:
+ *           type: integer
+ *           minimum: 1
+ *           description: Item quantity
+ *
+ *     CreateInvoice:
+ *       type: object
+ *       required:
+ *         - customer
+ *         - items
+ *         - paymentMethod
+ *       properties:
+ *         customer:
+ *           type: string
+ *           description: Customer ID
+ *         items:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/InvoiceItem'
+ *         paymentMethod:
+ *           type: string
+ *           enum: [cash, card, bank_transfer, qr_code]
+ *         discount:
+ *           type: number
+ *           minimum: 0
+ *           maximum: 100
+ *           description: Optional discount percentage
+ *         notes:
+ *           type: string
+ *           description: Optional notes
+ *
+ *     Invoice:
+ *       allOf:
+ *         - $ref: '#/components/schemas/CreateInvoice'
+ *         - type: object
+ *           properties:
+ *             _id:
+ *               type: string
+ *             invoiceNumber:
+ *               type: string
+ *             subTotal:
+ *               type: number
+ *             total:
+ *               type: number
+ *             paymentStatus:
+ *               type: string
+ *               enum: [pending, paid, cancelled]
+ *             qrCode:
+ *               type: string
+ *             createdAt:
+ *               type: string
+ *               format: date-time
+ */
 
 /**
  * @swagger
  * tags:
  *   name: Invoices
- *   description: Quản lý hóa đơn
+ *   description: Invoice management
  */
 
 /**
  * @swagger
  * /api/v1/invoices:
  *   get:
- *     tags: [Invoices]
  *     summary: Get all invoices
+ *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -44,23 +105,6 @@ const {
  *         schema:
  *           type: integer
  *         description: Results per page
- *       - in: query
- *         name: status
- *         schema:
- *           type: integer
- *           enum: [0, 1]
- *         description: "Filter by status (0 = inactive, 1 = active)"
- *       - in: query
- *         name: paymentStatus
- *         schema:
- *           type: string
- *           enum: [pending, paid, cancelled]
- *         description: Filter by payment status
- *       - in: query
- *         name: customer
- *         schema:
- *           type: string
- *         description: Filter by customer ID
  *       - in: query
  *         name: startDate
  *         schema:
@@ -73,15 +117,116 @@ const {
  *           type: string
  *           format: date
  *         description: Filter by end date
+ *       - in: query
+ *         name: paymentStatus
+ *         schema:
+ *           type: string
+ *           enum: [pending, paid, cancelled]
+ *         description: Filter by payment status
+ *     responses:
+ *       200:
+ *         description: Success
  */
-router.get("/", protect, getInvoices);
+router.get("/", protect, getInvoicesValidator, invoiceController.getInvoices);
+
+/**
+ * @swagger
+ * /api/v1/invoices/statistics:
+ *   get:
+ *     summary: Get invoice statistics
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/statistics",
+  protect,
+  authorize("admin"),
+  getStatisticsValidator,
+  invoiceController.getInvoiceStatistics
+);
+
+/**
+ * @swagger
+ * /api/v1/invoices/export:
+ *   get:
+ *     summary: Export invoices
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, xlsx]
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: File downloaded successfully
+ */
+router.get(
+  "/export",
+  protect,
+  authorize("admin"),
+  exportInvoicesValidator,
+  invoiceController.exportInvoices
+);
+
+/**
+ * @swagger
+ * /api/v1/invoices/customer/{customerId}:
+ *   get:
+ *     summary: Get customer invoices
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/customer/:customerId",
+  protect,
+  objectIdValidator("customerId"),
+  invoiceController.getCustomerInvoices
+);
 
 /**
  * @swagger
  * /api/v1/invoices/{id}:
  *   get:
+ *     summary: Get invoice by ID
  *     tags: [Invoices]
- *     summary: Get single invoice
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -90,30 +235,48 @@ router.get("/", protect, getInvoices);
  *         required: true
  *         schema:
  *           type: string
- *         description: Invoice ID
  *     responses:
  *       200:
  *         description: Success
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   $ref: '#/components/schemas/Invoice'
- *       404:
- *         description: Invoice not found
  */
-router.get("/:id", protect, getInvoice);
+router.get(
+  "/:id",
+  protect,
+  objectIdValidator("id"),
+  invoiceController.getInvoice
+);
+
+/**
+ * @swagger
+ * /api/v1/invoices/{id}/download:
+ *   get:
+ *     summary: Download invoice PDF
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: PDF file downloaded
+ */
+router.get(
+  "/:id/download",
+  protect,
+  objectIdValidator("id"),
+  invoiceController.downloadInvoice
+);
 
 /**
  * @swagger
  * /api/v1/invoices:
  *   post:
- *     tags: [Invoices]
  *     summary: Create new invoice
+ *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -121,63 +284,24 @@ router.get("/:id", protect, getInvoice);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - customer
- *               - items
- *               - paymentMethod
- *             properties:
- *               customer:
- *                 type: string
- *                 description: Customer ID
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   required:
- *                     - product
- *                     - quantity
- *                     - price
- *                   properties:
- *                     product:
- *                       type: string
- *                       description: Product ID
- *                     quantity:
- *                       type: number
- *                       minimum: 1
- *                     price:
- *                       type: number
- *                       minimum: 0
- *                     discount:
- *                       type: number
- *                       minimum: 0
- *                       maximum: 100
- *               paymentMethod:
- *                 type: string
- *                 enum: [cash, card, bank_transfer, qr_code]
- *               discount:
- *                 type: number
- *                 minimum: 0
- *                 maximum: 100
- *               tax:
- *                 type: number
- *                 minimum: 0
- *               notes:
- *                 type: string
+ *             $ref: '#/components/schemas/CreateInvoice'
  *     responses:
  *       201:
  *         description: Invoice created successfully
- *       400:
- *         description: Validation error or insufficient product quantity
  */
-router.post("/", protect, createInvoiceValidator, createInvoice);
+router.post(
+  "/",
+  protect,
+  createInvoiceValidator,
+  invoiceController.createInvoice
+);
 
 /**
  * @swagger
  * /api/v1/invoices/{id}/payment-status:
  *   patch:
+ *     summary: Update invoice payment status
  *     tags: [Invoices]
- *     summary: Update payment status
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -186,7 +310,6 @@ router.post("/", protect, createInvoiceValidator, createInvoice);
  *         required: true
  *         schema:
  *           type: string
- *         description: Invoice ID
  *     requestBody:
  *       required: true
  *       content:
@@ -199,138 +322,15 @@ router.post("/", protect, createInvoiceValidator, createInvoice);
  *               paymentStatus:
  *                 type: string
  *                 enum: [pending, paid, cancelled]
+ *     responses:
+ *       200:
+ *         description: Payment status updated successfully
  */
 router.patch(
   "/:id/payment-status",
   protect,
-  updatePaymentStatusValidator,
-  updatePaymentStatus
+  [objectIdValidator("id"), updatePaymentStatusValidator],
+  invoiceController.updatePaymentStatus
 );
-
-/**
- * @swagger
- * /api/v1/invoices/{id}/cancel:
- *   patch:
- *     tags: [Invoices]
- *     summary: Cancel invoice
- *     description: Cancels invoice and returns products to inventory
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Invoice ID
- *     responses:
- *       200:
- *         description: Invoice cancelled successfully
- *       400:
- *         description: Invoice is already cancelled
- *       404:
- *         description: Invoice not found
- */
-router.patch("/:id/cancel", protect, cancelInvoice);
-
-/**
- * @swagger
- * /api/v1/invoices/statistics:
- *   get:
- *     tags: [Invoices]
- *     summary: Get invoice statistics
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *         description: Start date for statistics
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *         description: End date for statistics
- *     responses:
- *       200:
- *         description: Success
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 summary:
- *                   type: object
- *                   properties:
- *                     totalInvoices:
- *                       type: number
- *                     totalRevenue:
- *                       type: number
- *                     averageValue:
- *                       type: number
- *                     minValue:
- *                       type: number
- *                     maxValue:
- *                       type: number
- *                 paymentMethods:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id:
- *                         type: string
- *                       count:
- *                         type: number
- *                       total:
- *                         type: number
- *                 dailyRevenue:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id:
- *                         type: string
- *                       revenue:
- *                         type: number
- *                       count:
- *                         type: number
- */
-router.get("/statistics", protect, getInvoiceStatistics);
-
-/**
- * @swagger
- * /api/v1/invoices/customer/{customerId}:
- *   get:
- *     tags: [Invoices]
- *     summary: Get customer invoice history
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: customerId
- *         required: true
- *         schema:
- *           type: string
- *         description: Customer ID
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *         description: Page number
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: Results per page
- *     responses:
- *       200:
- *         description: Success
- *       404:
- *         description: Customer not found
- */
-router.get("/customer/:customerId", protect, getCustomerInvoices);
 
 module.exports = router;

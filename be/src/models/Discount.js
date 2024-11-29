@@ -59,6 +59,7 @@ const discountSchema = new mongoose.Schema(
     },
     updateHistory: [
       {
+        action: String,
         updatedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",

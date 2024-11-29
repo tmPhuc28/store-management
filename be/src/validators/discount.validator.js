@@ -1,76 +1,227 @@
 // src/validators/discount.validator.js
-const { body } = require("express-validator");
+const { body, query } = require("express-validator");
 
 exports.createDiscountValidator = [
+  // Code validation
   body("code")
     .trim()
     .notEmpty()
-    .withMessage("Vui lòng nhập mã giảm giá")
+    .withMessage("Discount code is required")
     .isLength({ min: 3, max: 20 })
-    .withMessage("Mã giảm giá phải từ 3-20 ký tự")
-    .matches(/^[A-Za-z0-9]+$/)
-    .withMessage("Mã giảm giá chỉ được chứa chữ và số"),
+    .withMessage("Code must be between 3 and 20 characters")
+    .matches(/^[A-Za-z0-9_-]+$/)
+    .withMessage(
+      "Code can only contain letters, numbers, hyphens and underscores"
+    )
+    .toUpperCase(),
 
-  body("description").trim().notEmpty().withMessage("Vui lòng nhập mô tả"),
+  // Description validation
+  body("description")
+    .trim()
+    .notEmpty()
+    .withMessage("Description is required")
+    .isLength({ max: 200 })
+    .withMessage("Description cannot exceed 200 characters"),
 
+  // Type validation
   body("type")
+    .notEmpty()
+    .withMessage("Discount type is required")
     .isIn(["percentage", "fixed"])
-    .withMessage("Loại giảm giá không hợp lệ"),
+    .withMessage("Type must be either percentage or fixed"),
 
+  // Value validation
   body("value")
+    .notEmpty()
+    .withMessage("Discount value is required")
     .isFloat({ min: 0 })
-    .withMessage("Giá trị giảm giá không hợp lệ")
+    .withMessage("Value must be a positive number")
     .custom((value, { req }) => {
       if (req.body.type === "percentage" && value > 100) {
-        throw new Error("Phần trăm giảm giá không thể vượt quá 100%");
+        throw new Error("Percentage discount cannot exceed 100%");
       }
       return true;
     }),
 
+  // Minimum order value validation
   body("minOrderValue")
     .optional()
     .isFloat({ min: 0 })
-    .withMessage("Giá trị đơn hàng tối thiểu không hợp lệ"),
+    .withMessage("Minimum order value must be a positive number"),
 
+  // Maximum discount amount validation
   body("maxDiscount")
     .optional()
     .isFloat({ min: 0 })
-    .withMessage("Giá trị giảm tối đa không hợp lệ"),
-
-  body("startDate")
-    .isISO8601()
-    .withMessage("Ngày bắt đầu không hợp lệ")
+    .withMessage("Maximum discount must be a positive number")
     .custom((value, { req }) => {
+      if (req.body.type === "fixed" && value) {
+        throw new Error(
+          "Maximum discount only applies to percentage discounts"
+        );
+      }
+      return true;
+    }),
+
+  // Date validations
+  body("startDate")
+    .notEmpty()
+    .withMessage("Start date is required")
+    .isISO8601()
+    .withMessage("Invalid start date format")
+    .custom((value) => {
       if (new Date(value) < new Date()) {
-        throw new Error("Ngày bắt đầu phải lớn hơn ngày hiện tại");
+        throw new Error("Start date cannot be in the past");
       }
       return true;
     }),
 
   body("endDate")
+    .optional()
     .isISO8601()
-    .withMessage("Ngày kết thúc không hợp lệ")
+    .withMessage("Invalid end date format")
     .custom((value, { req }) => {
+      if (!value) return true;
       if (new Date(value) <= new Date(req.body.startDate)) {
-        throw new Error("Ngày kết thúc phải lớn hơn ngày bắt đầu");
+        throw new Error("End date must be after start date");
       }
       return true;
     }),
 
+  // Usage limit validation
   body("usageLimit")
     .optional()
     .isInt({ min: 1 })
-    .withMessage("Giới hạn sử dụng phải là số nguyên dương"),
+    .withMessage("Usage limit must be a positive integer"),
+
+  // Status validation
+  body("status")
+    .optional()
+    .isIn([0, 1])
+    .withMessage("Status must be either 0 (inactive) or 1 (active)")
+    .toInt(),
 ];
 
-exports.validateDiscountCodeValidator = [
-  body("code").trim().notEmpty().withMessage("Vui lòng nhập mã giảm giá"),
+exports.updateDiscountValidator = [
+  // Make all fields optional for update
+  body("code")
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 20 })
+    .withMessage("Code must be between 3 and 20 characters")
+    .matches(/^[A-Za-z0-9_-]+$/)
+    .withMessage(
+      "Code can only contain letters, numbers, hyphens and underscores"
+    )
+    .toUpperCase(),
+
+  // ... other fields similar to create but optional
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Description cannot exceed 200 characters"),
+
+  body("type")
+    .optional()
+    .isIn(["percentage", "fixed"])
+    .withMessage("Type must be either percentage or fixed"),
+
+  // ... continue with other fields
+];
+
+exports.validateDiscountValidator = [
+  body("code").trim().notEmpty().withMessage("Discount code is required"),
 
   body("orderValue")
+    .notEmpty()
+    .withMessage("Order value is required")
     .isFloat({ min: 0 })
-    .withMessage("Giá trị đơn hàng không hợp lệ"),
+    .withMessage("Order value must be a positive number"),
 ];
 
 exports.updateDiscountStatusValidator = [
-  body("status").isIn([0, 1]).withMessage("Trạng thái không hợp lệ"),
+  body("status")
+    .notEmpty()
+    .withMessage("Status is required")
+    .isIn([0, 1])
+    .withMessage("Status must be either 0 (inactive) or 1 (active)")
+    .toInt(),
 ];
+
+exports.getDiscountsValidator = [
+  query("status")
+    .optional()
+    .isIn([0, 1])
+    .withMessage("Invalid status value")
+    .toInt(),
+
+  query("type")
+    .optional()
+    .isIn(["percentage", "fixed"])
+    .withMessage("Invalid discount type"),
+
+  query("isActive")
+    .optional()
+    .isBoolean()
+    .withMessage("isActive must be a boolean")
+    .toBoolean(),
+
+  query("page")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Page must be a positive integer")
+    .toInt(),
+
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("Limit must be between 1 and 100")
+    .toInt(),
+
+  query("sortBy")
+    .optional()
+    .matches(/^[-]?(createdAt|code|value|startDate|endDate|usedCount)$/)
+    .withMessage("Invalid sort field"),
+];
+
+exports.validateDiscountDates = (startDate, endDate) => {
+  const errors = [];
+  const now = new Date();
+  const start = new Date(startDate);
+
+  if (start < now) {
+    errors.push("Start date cannot be in the past");
+  }
+
+  if (endDate) {
+    const end = new Date(endDate);
+    if (end <= start) {
+      errors.push("End date must be after start date");
+    }
+  }
+
+  return errors;
+};
+
+exports.validateDiscountValue = (type, value, maxDiscount) => {
+  const errors = [];
+
+  if (type === "percentage") {
+    if (value < 0 || value > 100) {
+      errors.push("Percentage discount must be between 0 and 100");
+    }
+    if (maxDiscount && maxDiscount <= 0) {
+      errors.push("Maximum discount amount must be positive");
+    }
+  } else if (type === "fixed") {
+    if (value <= 0) {
+      errors.push("Fixed discount must be greater than 0");
+    }
+    if (maxDiscount) {
+      errors.push("Maximum discount only applies to percentage discounts");
+    }
+  }
+
+  return errors;
+};
