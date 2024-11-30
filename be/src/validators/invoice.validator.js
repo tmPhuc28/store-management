@@ -30,15 +30,17 @@ exports.createInvoiceValidator = [
   body("paymentMethod")
     .notEmpty()
     .withMessage("Payment method is required")
-    .isIn(["cash", "card", "bank_transfer", "qr_code"])
+    .isIn(["cash", "bank_transfer"])
     .withMessage("Invalid payment method"),
 
-  // Optional fields validation
-  body("discount")
+  // Optional discount code validation
+  body("discountCode")
     .optional()
-    .isFloat({ min: 0, max: 100 })
-    .withMessage("Discount must be between 0 and 100 percent"),
+    .trim()
+    .isLength({ min: 3, max: 20 })
+    .withMessage("Discount code must be between 3 and 20 characters"),
 
+  // Optional notes validation
   body("notes")
     .optional()
     .trim()

@@ -2,12 +2,13 @@
 const Invoice = require("../models/Invoice");
 const Product = require("../models/Product");
 const Customer = require("../models/Customer");
+const Discount = require("../models/Discount");
+const storeService = require("./store.service");
 const {
   createHistoryRecord,
   mergeHistory,
 } = require("../utils/historyHandler");
 const { logAction } = require("../utils/logger");
-const QRCode = require("qrcode");
 
 const invoiceLog = logAction("Invoice");
 
@@ -93,24 +94,24 @@ class InvoiceService {
         throw new Error("Customer not found or inactive");
       }
 
-      // Validate and process items
+      // Process items
       const processedItems = await this.validateAndProcessItems(data.items);
-
-      // Calculate totals
-      const { subTotal, total } = await this.calculateTotals(
-        processedItems,
-        data.discount
+      const subTotal = processedItems.reduce(
+        (sum, item) => sum + item.subTotal,
+        0
       );
 
-      // Generate QR code if needed
-      let qrCode = null;
-      if (data.paymentMethod === "qr_code") {
-        qrCode = await this.generatePaymentQR({
-          total,
-          customerId: customer._id,
-          items: processedItems.length,
-        });
+      // Process discount if provided
+      let discountInfo = null;
+      if (data.discountCode) {
+        discountInfo = await this.validateAndProcessDiscount(
+          data.discountCode,
+          subTotal
+        );
       }
+
+      // Calculate final total
+      const total = discountInfo ? subTotal - discountInfo.amount : subTotal;
 
       // Create invoice
       const invoice = await this.model.create({
@@ -118,10 +119,10 @@ class InvoiceService {
         customer: customer._id,
         items: processedItems,
         subTotal,
+        discount: discountInfo,
         total,
         paymentMethod: data.paymentMethod,
         paymentStatus: data.paymentMethod === "cash" ? "paid" : "pending",
-        qrCode,
         notes: data.notes,
         createdBy: user._id,
         updateHistory: [
@@ -129,6 +130,7 @@ class InvoiceService {
             user,
             {
               items: processedItems,
+              discount: discountInfo,
               total,
             },
             "create"
@@ -142,11 +144,19 @@ class InvoiceService {
       // Update customer purchase history
       await this.updateCustomerPurchaseHistory(customer._id, invoice._id);
 
+      // Update discount usage if applicable
+      if (discountInfo) {
+        await Discount.findByIdAndUpdate(discountInfo.discountId, {
+          $inc: { usedCount: 1 },
+        });
+      }
+
       invoiceLog.success("Created invoice", {
         invoiceId: invoice._id,
         userId: user._id,
         customerId: customer._id,
         total,
+        discountApplied: !!discountInfo,
       });
 
       return invoice;
@@ -168,7 +178,14 @@ class InvoiceService {
         // Return products to inventory
         await this.returnProductsToInventory(invoice.items);
 
-        // Update customer purchase history if needed
+        // Revert discount usage if applicable
+        if (invoice.discount?.discountId) {
+          await Discount.findByIdAndUpdate(invoice.discount.discountId, {
+            $inc: { usedCount: -1 },
+          });
+        }
+
+        // Update customer purchase history
         await this.updateCustomerOnCancel(invoice);
       }
 
@@ -239,6 +256,32 @@ class InvoiceService {
     return processedItems;
   }
 
+  async validateAndProcessDiscount(discountCode, orderValue) {
+    if (!discountCode) return null;
+
+    const discount = await Discount.findOne({
+      code: discountCode.toUpperCase(),
+      status: 1,
+    });
+
+    if (!discount) {
+      throw new Error("Invalid discount code");
+    }
+
+    const isValid = await discount.isValid(orderValue);
+    if (!isValid) {
+      throw new Error("Discount code is not applicable to this order");
+    }
+
+    return {
+      discountId: discount._id,
+      code: discount.code,
+      type: discount.type,
+      value: discount.value,
+      amount: discount.calculateDiscount(orderValue),
+    };
+  }
+
   async calculateTotals(items, discount = 0) {
     const subTotal = items.reduce((sum, item) => sum + item.subTotal, 0);
     const discountAmount = (subTotal * (discount || 0)) / 100;
@@ -255,14 +298,47 @@ class InvoiceService {
     return `INV${year}${month}${(count + 1).toString().padStart(6, "0")}`;
   }
 
-  async generatePaymentQR(data) {
+  async generatePaymentQR(invoice) {
     try {
-      return await QRCode.toDataURL(JSON.stringify(data));
+      if (invoice.paymentMethod !== "bank_transfer") {
+        return null;
+      }
+
+      const store = await storeService.getStoreInfo();
+      if (!store) {
+        throw new Error("Store information not found");
+      }
+
+      const description = `Thanh toan hoa don ${invoice.invoiceNumber}`;
+
+      // Tạo QR URL
+      const qrCode = store.generateVietQRUrl(invoice.total, description);
+
+      // Cập nhật bankTransferInfo
+      await this.model.findByIdAndUpdate(invoice._id, {
+        "bankTransferInfo.amount": invoice.total,
+        "bankTransferInfo.description": description,
+        "bankTransferInfo.qrCode": qrCode,
+      });
+
+      return {
+        qrCode,
+        amount: invoice.total,
+        description,
+        bankInfo: {
+          bankId: store.bankInfo.bankId,
+          accountNumber: store.bankInfo.accountNumber,
+          accountName: store.bankInfo.accountName,
+        },
+      };
     } catch (error) {
-      invoiceLog.error("Failed to generate QR code", error);
-      return null;
+      invoiceLog.error("Failed to generate payment QR", error, {
+        invoiceId: invoice._id,
+      });
+      throw error;
     }
   }
+
   async getInvoiceById(id) {
     const invoice = await this.model
       .findById(id)

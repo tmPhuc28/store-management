@@ -34,6 +34,19 @@ class InvoiceController {
       }
 
       const invoice = await invoiceService.getInvoiceById(req.params.id);
+
+      // If bank transfer method, ensure QR code is up to date
+      if (
+        invoice.paymentMethod === "bank_transfer" &&
+        invoice.paymentStatus === "pending"
+      ) {
+        const qrCode = await invoiceService.generatePaymentQR(invoice);
+        if (qrCode !== invoice.bankTransferInfo.qrCode) {
+          invoice.bankTransferInfo.qrCode = qrCode;
+          await invoice.save();
+        }
+      }
+
       res.status(200).json({
         success: true,
         data: invoice,
@@ -223,6 +236,43 @@ class InvoiceController {
 
       res.send(fileBuffer);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  async getPaymentQR(req, res, next) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errors: errors.array(),
+        });
+      }
+
+      const invoice = await invoiceService.getInvoiceById(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({
+          success: false,
+          message: "Invoice not found",
+        });
+      }
+
+      if (invoice.paymentMethod !== "bank_transfer") {
+        return res.status(400).json({
+          success: false,
+          message: "QR code is only available for bank transfer payments",
+        });
+      }
+
+      const qrData = await invoiceService.generatePaymentQR(invoice);
+
+      res.json({
+        success: true,
+        data: qrData,
+      });
+    } catch (error) {
+      invoiceLog.error("Payment QR generation failed", error);
       next(error);
     }
   }

@@ -1,4 +1,3 @@
-// src/models/Invoice.js
 const mongoose = require("mongoose");
 
 const invoiceItemSchema = new mongoose.Schema({
@@ -49,12 +48,19 @@ const invoiceSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: [0, "Subtotal cannot be negative"],
+      default: 0,
     },
-    appliedDiscount: {
-      code: {
-        type: String,
+    discount: {
+      discountId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Discount",
       },
-      percentage: {
+      code: String,
+      type: {
+        type: String,
+        enum: ["percentage", "fixed"],
+      },
+      value: {
         type: Number,
         default: 0,
       },
@@ -67,19 +73,27 @@ const invoiceSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: [0, "Total cannot be negative"],
+      default: 0,
     },
     paymentMethod: {
       type: String,
       required: true,
-      enum: ["cash", "card", "bank_transfer", "qr_code"],
+      enum: ["cash", "bank_transfer"],
     },
     paymentStatus: {
       type: String,
       enum: ["pending", "paid", "cancelled"],
       default: "pending",
     },
+    bankTransferInfo: {
+      amount: {
+        type: Number,
+        default: 0,
+      },
+      description: String,
+      qrCode: String,
+    },
     notes: String,
-    qrCode: String,
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -107,54 +121,92 @@ const invoiceSchema = new mongoose.Schema(
   }
 );
 
-invoiceSchema.pre("save", function (next) {
-  // Tính subTotal từ các items
-  this.subTotal = this.items.reduce((sum, item) => sum + item.subTotal, 0);
+// Calculate item prices and subtotals
+invoiceSchema.pre("save", async function (next) {
+  try {
+    if (this.isNew || this.isModified("items")) {
+      let totalAmount = 0;
 
-  // Tính total sau khi áp dụng discount
-  let discountAmount = this.appliedDiscount.amount;
-  if (this.appliedDiscount.percentage > 0) {
-    discountAmount = (this.subTotal * this.appliedDiscount.percentage) / 100;
+      for (const item of this.items) {
+        const product = await mongoose.model("Product").findById(item.product);
+        if (!product) {
+          throw new Error(`Product not found: ${item.product}`);
+        }
+
+        item.price = product.price;
+        item.finalPrice = product.finalPrice || product.price;
+        item.subTotal = item.finalPrice * item.quantity;
+        totalAmount += item.subTotal;
+      }
+
+      this.subTotal = totalAmount;
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
+});
 
-  this.total = this.subTotal - discountAmount;
-  next();
+// Calculate totals and generate QR
+invoiceSchema.pre("save", async function (next) {
+  try {
+    // Apply discount if exists
+    if (this.discount && this.discount.value > 0) {
+      if (this.discount.type === "percentage") {
+        this.discount.amount = (this.subTotal * this.discount.value) / 100;
+      } else {
+        this.discount.amount = this.discount.value;
+      }
+    }
+
+    // Calculate final total
+    this.total = this.subTotal - (this.discount?.amount || 0);
+
+    // Generate VietQR for bank transfer
+    if (this.paymentMethod === "bank_transfer") {
+      const Store = mongoose.model("Store");
+      const store = await Store.findOne();
+
+      if (!store) {
+        throw new Error("Store information not found");
+      }
+
+      const description = `Thanh toan ${this.invoiceNumber}`;
+      this.bankTransferInfo = {
+        amount: this.total,
+        description,
+        qrCode: store.generateVietQRUrl(this.total, description),
+      };
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Generate invoice number
 invoiceSchema.pre("save", async function (next) {
-  if (this.isNew) {
-    const count = await mongoose.model("Invoice").countDocuments();
-    const currentDate = new Date();
-    const year = currentDate.getFullYear().toString().slice(-2);
-    const month = (currentDate.getMonth() + 1).toString().padStart(2, "0");
-    this.invoiceNumber = `INV${year}${month}${(count + 1)
-      .toString()
-      .padStart(6, "0")}`;
+  try {
+    if (this.isNew) {
+      const count = await mongoose.model("Invoice").countDocuments();
+      const currentDate = new Date();
+      const year = currentDate.getFullYear().toString().slice(-2);
+      const month = (currentDate.getMonth() + 1).toString().padStart(2, "0");
+      this.invoiceNumber = `INV${year}${month}${(count + 1)
+        .toString()
+        .padStart(6, "0")}`;
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
-});
-
-// Calculate totals
-invoiceSchema.pre("save", function (next) {
-  // Calculate subtotal from items
-  this.subTotal = this.items.reduce((sum, item) => sum + item.subTotal, 0);
-
-  // Calculate final total with tax and discount
-  const discountAmount = (this.subTotal * this.discount) / 100;
-  this.total = this.subTotal - discountAmount + this.tax;
-
-  next();
-});
-
-// Virtual for status text
-invoiceSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
 });
 
 // Add indexes
 invoiceSchema.index({ invoiceNumber: 1 });
 invoiceSchema.index({ customer: 1 });
+invoiceSchema.index({ "discount.discountId": 1 });
 invoiceSchema.index({ status: 1 });
 invoiceSchema.index({ createdAt: -1 });
 invoiceSchema.index({ paymentStatus: 1 });

@@ -2,6 +2,10 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/auth");
+const {
+  validateDiscountCode,
+  checkDiscountAvailability,
+} = require("../middleware/discount");
 const invoiceController = require("../controllers/invoice.controller");
 const {
   createInvoiceValidator,
@@ -162,6 +166,26 @@ router.get(
 
 /**
  * @swagger
+ * /api/v1/invoices/validate-discount:
+ *   get:
+ *     summary: Validate a discount code
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: discountCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Discount code validation result
+ */
+router.get("/validate-discount", protect, checkDiscountAvailability);
+
+/**
+ * @swagger
  * /api/v1/invoices/export:
  *   get:
  *     summary: Export invoices
@@ -284,7 +308,30 @@ router.get(
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/CreateInvoice'
+ *             type: object
+ *             required:
+ *               - customer
+ *               - items
+ *               - paymentMethod
+ *             properties:
+ *               customer:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     product:
+ *                       type: string
+ *                     quantity:
+ *                       type: number
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [cash, bank_transfer]
+ *               discountCode:
+ *                 type: string
+ *               notes:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Invoice created successfully
@@ -293,6 +340,7 @@ router.post(
   "/",
   protect,
   createInvoiceValidator,
+  validateDiscountCode,
   invoiceController.createInvoice
 );
 
@@ -333,4 +381,32 @@ router.patch(
   invoiceController.updatePaymentStatus
 );
 
+/**
+ * @swagger
+ * /api/v1/invoices/{id}/qr:
+ *   get:
+ *     summary: Get payment QR code for an invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: QR code information retrieved successfully
+ *       400:
+ *         description: QR code not available for this payment method
+ *       404:
+ *         description: Invoice not found
+ */
+router.get(
+  "/:id/qr",
+  protect,
+  objectIdValidator("id"),
+  invoiceController.getPaymentQR
+);
 module.exports = router;
