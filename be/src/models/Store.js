@@ -1,4 +1,3 @@
-// src/models/Store.js
 const mongoose = require("mongoose");
 
 const storeSchema = new mongoose.Schema(
@@ -35,21 +34,9 @@ const storeSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
-    bankAccount: {
-      type: String,
-      required: [true, "Bank account number is required"],
-    },
-    bankName: {
-      type: String,
-      required: [true, "Bank name is required"],
-    },
-    accountName: {
-      type: String,
-      required: [true, "Account name is required"],
-    },
-    paymentQR: String, // Tự động tạo từ thông tin ngân hàng
     updateHistory: [
       {
+        action: String,
         updatedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",

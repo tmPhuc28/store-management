@@ -41,12 +41,6 @@ const { updateStoreValidator } = require("../validators/store.validator");
  *               type: string
  *         taxCode:
  *           type: string
- *         bankAccount:
- *           type: string
- *         bankName:
- *           type: string
- *         accountName:
- *           type: string
  */
 
 /**
@@ -77,34 +71,8 @@ router.get("/", protect, storeController.getStoreInfo);
 /**
  * @swagger
  * /api/v1/store:
- *   post:
- *     summary: Create new store (Admin)
- *     tags: [Store]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Store'
- *     responses:
- *       201:
- *         description: Store created successfully
- */
-router.post(
-  "/",
-  protect,
-  authorize("admin"),
-  updateStoreValidator,
-  storeController.createStore
-);
-
-/**
- * @swagger
- * /api/v1/store:
  *   put:
- *     summary: Update store information (Admin)
+ *     summary: Create or Update store information (Admin)
  *     tags: [Store]
  *     security:
  *       - bearerAuth: []
