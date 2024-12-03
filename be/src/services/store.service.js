@@ -1,115 +1,146 @@
-// src/services/store.service.js
+const BaseService = require("./base.service");
+const BankService = require("./bank.service");
 const Store = require("../models/Store");
 const {
   createHistoryRecord,
   mergeHistory,
 } = require("../utils/historyHandler");
-const { logAction } = require("../utils/logger");
-const { checkBankInfo } = require("../utils/bankValidator");
-const storeLog = logAction("Store");
 
-class StoreService {
+class StoreService extends BaseService {
   constructor() {
-    this.model = Store;
+    super(Store, "Store");
+    this.nullableFields = [
+      "email",
+      "taxCode",
+      "address.ward",
+      "address.district",
+      "address.province",
+    ];
+    this.bankService = new BankService();
   }
 
-  async validateAndFormatBankInfo(bankInfo) {
-    try {
-      const validatedInfo = await checkBankInfo(bankInfo);
-      if (!validatedInfo.isValid) {
-        throw new Error(validatedInfo.message);
-      }
-      return validatedInfo.data;
-    } catch (error) {
-      storeLog.error("Bank information validation failed", error);
-      throw error;
-    }
-  }
-
+  /**
+   * Get store information
+   */
   async getStoreInfo() {
     try {
-      const store = await this.model.findOne();
+      const store = await this.model
+        .findOne()
+        .populate("updateHistory.updatedBy", "username email");
+
       if (!store) {
         throw new Error("Store information not found");
       }
 
       return store;
     } catch (error) {
-      storeLog.error("Failed to retrieve store information", error);
+      this.logger.error("Failed to retrieve store information", error);
       throw error;
     }
   }
 
+  /**
+   * Get store bank information
+   */
+  async getStoreBankInfo() {
+    try {
+      const store = await this.getStoreInfo();
+
+      if (!store.bankInfo) {
+        throw new Error("Store bank information not configured");
+      }
+
+      return store.bankInfo;
+    } catch (error) {
+      this.logger.error("Failed to get store bank information", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create or Update store information
+   */
   async updateStore(data, user) {
     try {
-      let store = await this.model.findOne();
-
-      // Validate bank information if provided
       if (data.bankInfo) {
-        data.bankInfo = await this.validateAndFormatBankInfo(data.bankInfo);
+        // Validate bank info trước khi lưu
+        const validatedBankInfo = await this.bankService.validateBankInfo(
+          data.bankInfo
+        );
+        data.bankInfo = validatedBankInfo;
       }
 
-      // Create if not exists
-      if (!store) {
-        if (!data.bankInfo) {
-          throw new Error("Bank information is required for store creation");
-        }
+      const normalizedData = await this.validateAndNormalize(data);
 
-        store = await this.model.create({
-          ...data,
-          updateHistory: [createHistoryRecord(user, data, "create")],
-        });
+      let store = await this.model.findOne();
+      let isNew = !store;
 
-        storeLog.success("Created store information", {
-          userId: user._id,
-          storeData: data,
-        });
+      const historyRecord = createHistoryRecord(
+        user,
+        normalizedData,
+        isNew ? "create" : "update"
+      );
 
-        return store;
-      }
-
-      // Update existing store
-      const historyRecord = createHistoryRecord(user, data, "update");
-      const updateHistory = mergeHistory(store.updateHistory, historyRecord);
-
-      // Generate VietQR if bank info is updated
-      const bankInfoChanged =
-        data.bankInfo &&
-        (data.bankInfo.accountNumber !== store.bankInfo?.accountNumber ||
-          data.bankInfo.bankId !== store.bankInfo?.bankId);
+      const updateHistory = isNew
+        ? [historyRecord]
+        : mergeHistory(store.updateHistory, historyRecord);
 
       const updatedStore = await this.model.findOneAndUpdate(
         {},
         {
-          ...data,
+          ...normalizedData,
+          updateHistory,
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true,
+        }
+      );
+
+      return updatedStore;
+    } catch (error) {
+      this.logger.error("Failed to update store", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update bank information for store
+   */
+  async updateBankInfo(bankInfo, user) {
+    try {
+      const validatedBankInfo = await this.bankService.validateBankInfo(
+        bankInfo
+      );
+
+      const store = await this.model.findOne();
+      if (!store) {
+        throw new Error("Store not found");
+      }
+
+      const historyRecord = createHistoryRecord(
+        user,
+        { bankInfo: validatedBankInfo },
+        "update_bank_info"
+      );
+      const updateHistory = mergeHistory(store.updateHistory, historyRecord);
+
+      const updatedStore = await this.model.findOneAndUpdate(
+        {},
+        {
+          bankInfo: validatedBankInfo,
           updateHistory,
         },
         { new: true }
       );
 
-      storeLog.success("Updated store information", {
-        userId: user._id,
-        changes: data,
-        bankInfoChanged,
-      });
-
       return updatedStore;
     } catch (error) {
-      storeLog.error("Failed to update store information", error);
-      throw error;
-    }
-  }
-
-  // Helper method to generate VietQR URL
-  async generateVietQRUrl(amount, description) {
-    try {
-      const store = await this.getStoreInfo();
-      return store.generateVietQRUrl(amount, description);
-    } catch (error) {
-      storeLog.error("Failed to generate VietQR URL", error);
+      this.logger.error("Failed to update bank info", error);
       throw error;
     }
   }
 }
 
-module.exports = new StoreService();
+module.exports = StoreService;

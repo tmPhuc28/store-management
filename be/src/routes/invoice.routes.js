@@ -1,20 +1,22 @@
-// src/routes/invoice.routes.js
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/auth");
-const {
-  validateDiscountCode,
-  checkDiscountAvailability,
-} = require("../middleware/discount");
 const invoiceController = require("../controllers/invoice.controller");
 const {
   createInvoiceValidator,
-  updatePaymentStatusValidator,
+  updateStatusValidator,
+  confirmPaymentValidator,
   getInvoicesValidator,
-  getStatisticsValidator,
-  exportInvoicesValidator,
+  statisticsValidator,
+  refundValidator,
 } = require("../validators/invoice.validator");
-const { objectIdValidator } = require("../validators/common.validator");
+
+/**
+ * @swagger
+ * tags:
+ *   name: Invoices
+ *   description: Invoice management
+ */
 
 /**
  * @swagger
@@ -30,9 +32,9 @@ const { objectIdValidator } = require("../validators/common.validator");
  *           type: string
  *           description: Product ID
  *         quantity:
- *           type: integer
+ *           type: number
  *           minimum: 1
- *           description: Item quantity
+ *           description: Quantity of product
  *
  *     CreateInvoice:
  *       type: object
@@ -50,49 +52,30 @@ const { objectIdValidator } = require("../validators/common.validator");
  *             $ref: '#/components/schemas/InvoiceItem'
  *         paymentMethod:
  *           type: string
- *           enum: [cash, card, bank_transfer, qr_code]
- *         discount:
- *           type: number
- *           minimum: 0
- *           maximum: 100
- *           description: Optional discount percentage
+ *           enum: [cash, bank_transfer]
+ *         discountCode:
+ *           type: string
  *         notes:
  *           type: string
- *           description: Optional notes
  *
- *     Invoice:
- *       allOf:
- *         - $ref: '#/components/schemas/CreateInvoice'
- *         - type: object
- *           properties:
- *             _id:
- *               type: string
- *             invoiceNumber:
- *               type: string
- *             subTotal:
- *               type: number
- *             total:
- *               type: number
- *             paymentStatus:
- *               type: string
- *               enum: [pending, paid, cancelled]
- *             qrCode:
- *               type: string
- *             createdAt:
- *               type: string
- *               format: date-time
+ *     PaymentConfirmation:
+ *       type: object
+ *       required:
+ *         - amount
+ *       properties:
+ *         amount:
+ *           type: number
+ *           description: Payment amount
+ *         transactionId:
+ *           type: string
+ *           description: Required for bank transfer
+ *         notes:
+ *           type: string
  */
 
 /**
  * @swagger
- * tags:
- *   name: Invoices
- *   description: Invoice management
- */
-
-/**
- * @swagger
- * /api/v1/invoices:
+ * /api/v2/invoices:
  *   get:
  *     summary: Get all invoices
  *     tags: [Invoices]
@@ -110,23 +93,20 @@ const { objectIdValidator } = require("../validators/common.validator");
  *           type: integer
  *         description: Results per page
  *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, confirmed, paid, completed, canceled, refunded]
+ *       - in: query
  *         name: startDate
  *         schema:
  *           type: string
  *           format: date
- *         description: Filter by start date
  *       - in: query
  *         name: endDate
  *         schema:
  *           type: string
  *           format: date
- *         description: Filter by end date
- *       - in: query
- *         name: paymentStatus
- *         schema:
- *           type: string
- *           enum: [pending, paid, cancelled]
- *         description: Filter by payment status
  *     responses:
  *       200:
  *         description: Success
@@ -135,119 +115,7 @@ router.get("/", protect, getInvoicesValidator, invoiceController.getInvoices);
 
 /**
  * @swagger
- * /api/v1/invoices/statistics:
- *   get:
- *     summary: Get invoice statistics
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Success
- */
-router.get(
-  "/statistics",
-  protect,
-  authorize("admin"),
-  getStatisticsValidator,
-  invoiceController.getInvoiceStatistics
-);
-
-/**
- * @swagger
- * /api/v1/invoices/validate-discount:
- *   get:
- *     summary: Validate a discount code
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: discountCode
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Discount code validation result
- */
-router.get("/validate-discount", protect, checkDiscountAvailability);
-
-/**
- * @swagger
- * /api/v1/invoices/export:
- *   get:
- *     summary: Export invoices
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [csv, xlsx]
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: File downloaded successfully
- */
-router.get(
-  "/export",
-  protect,
-  authorize("admin"),
-  exportInvoicesValidator,
-  invoiceController.exportInvoices
-);
-
-/**
- * @swagger
- * /api/v1/invoices/customer/{customerId}:
- *   get:
- *     summary: Get customer invoices
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: customerId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Success
- */
-router.get(
-  "/customer/:customerId",
-  protect,
-  objectIdValidator("customerId"),
-  invoiceController.getCustomerInvoices
-);
-
-/**
- * @swagger
- * /api/v1/invoices/{id}:
+ * /api/v2/invoices/{id}:
  *   get:
  *     summary: Get invoice by ID
  *     tags: [Invoices]
@@ -263,41 +131,11 @@ router.get(
  *       200:
  *         description: Success
  */
-router.get(
-  "/:id",
-  protect,
-  objectIdValidator("id"),
-  invoiceController.getInvoice
-);
+router.get("/:id", protect, invoiceController.getInvoice);
 
 /**
  * @swagger
- * /api/v1/invoices/{id}/download:
- *   get:
- *     summary: Download invoice PDF
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: PDF file downloaded
- */
-router.get(
-  "/:id/download",
-  protect,
-  objectIdValidator("id"),
-  invoiceController.downloadInvoice
-);
-
-/**
- * @swagger
- * /api/v1/invoices:
+ * /api/v2/invoices:
  *   post:
  *     summary: Create new invoice
  *     tags: [Invoices]
@@ -308,30 +146,7 @@ router.get(
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - customer
- *               - items
- *               - paymentMethod
- *             properties:
- *               customer:
- *                 type: string
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     product:
- *                       type: string
- *                     quantity:
- *                       type: number
- *               paymentMethod:
- *                 type: string
- *                 enum: [cash, bank_transfer]
- *               discountCode:
- *                 type: string
- *               notes:
- *                 type: string
+ *             $ref: '#/components/schemas/CreateInvoice'
  *     responses:
  *       201:
  *         description: Invoice created successfully
@@ -340,15 +155,14 @@ router.post(
   "/",
   protect,
   createInvoiceValidator,
-  validateDiscountCode,
   invoiceController.createInvoice
 );
 
 /**
  * @swagger
- * /api/v1/invoices/{id}/payment-status:
+ * /api/v2/invoices/{id}/status:
  *   patch:
- *     summary: Update invoice payment status
+ *     summary: Update invoice status
  *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
@@ -365,27 +179,62 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - paymentStatus
+ *               - status
  *             properties:
- *               paymentStatus:
+ *               status:
  *                 type: string
- *                 enum: [pending, paid, cancelled]
+ *                 enum: [confirmed, paid, completed, canceled, refunded]
+ *               reason:
+ *                 type: string
+ *               notes:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Payment status updated successfully
+ *         description: Status updated successfully
  */
 router.patch(
-  "/:id/payment-status",
+  "/:id/status",
   protect,
-  [objectIdValidator("id"), updatePaymentStatusValidator],
-  invoiceController.updatePaymentStatus
+  updateStatusValidator,
+  invoiceController.updateStatus
 );
 
 /**
  * @swagger
- * /api/v1/invoices/{id}/qr:
+ * /api/v2/invoices/{id}/payment:
+ *   post:
+ *     summary: Confirm invoice payment
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PaymentConfirmation'
+ *     responses:
+ *       200:
+ *         description: Payment confirmed successfully
+ */
+router.post(
+  "/:id/payment",
+  protect,
+  confirmPaymentValidator,
+  invoiceController.confirmPayment
+);
+
+/**
+ * @swagger
+ * /api/v2/invoices/{id}/qr:
  *   get:
- *     summary: Get payment QR code for an invoice
+ *     summary: Get payment QR code
  *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
@@ -397,16 +246,245 @@ router.patch(
  *           type: string
  *     responses:
  *       200:
- *         description: QR code information retrieved successfully
- *       400:
- *         description: QR code not available for this payment method
- *       404:
- *         description: Invoice not found
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 qrCode:
+ *                   type: string
+ */
+router.get("/:id/qr", protect, invoiceController.getPaymentQR);
+
+/**
+ * @swagger
+ * /api/v2/invoices/statistics/daily:
+ *   get:
+ *     summary: Get daily revenue statistics
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Success
  */
 router.get(
-  "/:id/qr",
+  "/statistics/daily",
   protect,
-  objectIdValidator("id"),
-  invoiceController.getPaymentQR
+  authorize("admin"),
+  statisticsValidator,
+  invoiceController.getDailyRevenue
 );
+
+/**
+ * @swagger
+ * /api/v2/invoices/statistics/top-products:
+ *   get:
+ *     summary: Get top selling products
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/statistics/top-products",
+  protect,
+  authorize("admin"),
+  statisticsValidator,
+  invoiceController.getTopProducts
+);
+
+/**
+ * @swagger
+ * /api/v2/invoices/statistics/payment-methods:
+ *   get:
+ *     summary: Get payment method statistics
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/statistics/payment-methods",
+  protect,
+  authorize("admin"),
+  statisticsValidator,
+  invoiceController.getPaymentStats
+);
+
+/**
+ * @swagger
+ * /api/v2/invoices/{id}/refund:
+ *   post:
+ *     summary: Process invoice refund
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refundAmount
+ *               - reason
+ *               - refundMethod
+ *             properties:
+ *               refundAmount:
+ *                 type: number
+ *               reason:
+ *                 type: string
+ *               refundMethod:
+ *                 type: string
+ *                 enum: [cash, bank_transfer]
+ *               bankInfo:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Refund processed successfully
+ */
+router.post(
+  "/:id/refund",
+  protect,
+  refundValidator,
+  invoiceController.handleRefund
+);
+
+/**
+ * @swagger
+ * /api/v2/invoices/customer/{customerId}:
+ *   get:
+ *     summary: Get customer's invoice history
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/customer/:customerId",
+  protect,
+  invoiceController.getCustomerInvoices
+);
+
+/**
+ * @swagger
+ * /api/v2/invoices/{id}/history:
+ *   get:
+ *     summary: Get invoice status history
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get("/:id/history", protect, invoiceController.getStatusHistory);
+
+/**
+ * @swagger
+ * /api/v2/invoices/statistics:
+ *   get:
+ *     summary: Get comprehensive invoice statistics
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [daily, monthly, payment_methods, top_products]
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get(
+  "/statistics",
+  protect,
+  authorize("admin"),
+  statisticsValidator,
+  invoiceController.getInvoiceStatistics
+);
+
 module.exports = router;

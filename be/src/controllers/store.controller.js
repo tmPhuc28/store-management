@@ -1,11 +1,16 @@
 // src/controllers/store.controller.js
 const { validationResult } = require("express-validator");
-const storeService = require("../services/store.service");
+const StoreService = require("../services/store.service");
 
 class StoreController {
-  async getStoreInfo(req, res, next) {
+  constructor() {
+    this.storeService = new StoreService();
+  }
+
+  getStore = async (req, res, next) => {
     try {
-      const store = await storeService.getStoreInfo();
+      const store = await this.storeService.getStoreInfo();
+
       res.status(200).json({
         success: true,
         data: store,
@@ -19,9 +24,9 @@ class StoreController {
       }
       next(error);
     }
-  }
+  };
 
-  async updateStore(req, res, next) {
+  updateStore = async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -31,15 +36,53 @@ class StoreController {
         });
       }
 
-      const store = await storeService.updateStore(req.body, req.user);
+      const store = await this.storeService.updateStore(req.body, req.user);
+
       res.status(200).json({
         success: true,
         data: store,
+        message: "Store information updated successfully",
       });
     } catch (error) {
       next(error);
     }
-  }
+  };
+
+  getStoreBankInfo = async (req, res, next) => {
+    try {
+      const bankInfo = await this.storeService.getStoreBankInfo();
+
+      res.status(200).json({
+        success: true,
+        data: bankInfo,
+      });
+    } catch (error) {
+      if (error.message === "Store bank information not configured") {
+        return res.status(404).json({
+          success: false,
+          message: error.message,
+        });
+      }
+      next(error);
+    }
+  };
+
+  updateBankInfo = async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const store = await this.storeService.updateBankInfo(req.body, req.user);
+      res.status(200).json({
+        success: true,
+        data: store.bankInfo,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 module.exports = new StoreController();

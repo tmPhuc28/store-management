@@ -1,5 +1,29 @@
 const mongoose = require("mongoose");
 
+const bankInfoSchema = new mongoose.Schema({
+  bankId: {
+    type: String,
+    required: [true, "Bank ID is required"],
+  },
+  bin: {
+    type: String,
+    required: [true, "Bank BIN is required"],
+  },
+  shortName: {
+    type: String,
+    required: [true, "Bank short name is required"],
+  },
+  accountNumber: {
+    type: String,
+    required: [true, "Account number is required"],
+    maxlength: [19, "Account number cannot exceed 19 characters"],
+  },
+  accountName: {
+    type: String,
+    required: [true, "Account name is required"],
+  },
+});
+
 const storeSchema = new mongoose.Schema(
   {
     name: {
@@ -33,39 +57,12 @@ const storeSchema = new mongoose.Schema(
       type: String,
       unique: true,
       sparse: true,
+      match: [/^[0-9]{10,13}$/, "Invalid tax code format"],
     },
-    // Updated bank information to match VietQR
-    bankInfo: {
-      bankId: {
-        type: String,
-        required: [true, "Bank ID is required"],
-      },
-      bin: {
-        type: String,
-        required: [true, "Bank BIN is required"],
-      },
-      shortName: {
-        type: String,
-        required: [true, "Bank short name is required"],
-      },
-      accountNumber: {
-        type: String,
-        required: [true, "Bank account number is required"],
-        maxlength: [19, "Account number cannot exceed 19 characters"],
-      },
-      accountName: {
-        type: String,
-        required: [true, "Account name is required"],
-      },
-      template: {
-        type: String,
-        enum: ["compact", "compact2", "qr_only", "print"],
-        default: "compact2",
-      },
-    },
-    paymentQR: String, // Will be generated using VietQR format
+    bankInfo: bankInfoSchema,
     updateHistory: [
       {
+        action: String,
         updatedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
@@ -83,42 +80,7 @@ const storeSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for formatted address
-storeSchema.virtual("fullAddress").get(function () {
-  const { detail, ward, district, province } = this.address;
-  return [detail, ward, district, province].filter(Boolean).join(", ");
-});
-
-// Generate VietQR URL
-storeSchema.methods.generateVietQRUrl = function (
-  amount = "",
-  description = ""
-) {
-  try {
-    const { bankId, accountNumber, template = "compact2" } = this.bankInfo;
-    const accountName = encodeURIComponent(this.bankInfo.accountName);
-    const desc = description ? encodeURIComponent(description) : "";
-
-    const baseUrl = "https://img.vietqr.io/image";
-
-    let url = `${baseUrl}/${bankId}-${accountNumber}-${template}.png`;
-
-    const params = [];
-    if (amount) params.push(`amount=${amount}`);
-    if (desc) params.push(`addInfo=${desc}`);
-    if (accountName) params.push(`accountName=${accountName}`);
-
-    if (params.length > 0) {
-      url += `?${params.join("&")}`;
-    }
-
-    return url;
-  } catch (error) {
-    throw new Error(`Failed to generate VietQR URL: ${error.message}`);
-  }
-};
-
-// Ensure only one store document exists
+// Đảm bảo chỉ có một document store
 storeSchema.pre("save", async function (next) {
   if (this.isNew) {
     const count = await this.constructor.countDocuments();
@@ -127,6 +89,12 @@ storeSchema.pre("save", async function (next) {
     }
   }
   next();
+});
+
+// Virtual cho formatted address
+storeSchema.virtual("fullAddress").get(function () {
+  const { detail, ward, district, province } = this.address;
+  return [detail, ward, district, province].filter(Boolean).join(", ");
 });
 
 module.exports = mongoose.model("Store", storeSchema);

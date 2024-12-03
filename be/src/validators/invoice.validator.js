@@ -1,6 +1,10 @@
-// src/validators/invoice.validator.js
 const { body, query } = require("express-validator");
+const {
+  INVOICE_STATES,
+  PAYMENT_METHODS,
+} = require("../constants/invoice.constants");
 
+// Validate create invoice
 exports.createInvoiceValidator = [
   // Customer validation
   body("customer")
@@ -30,30 +34,46 @@ exports.createInvoiceValidator = [
   body("paymentMethod")
     .notEmpty()
     .withMessage("Payment method is required")
-    .isIn(["cash", "bank_transfer"])
+    .isIn(Object.values(PAYMENT_METHODS))
     .withMessage("Invalid payment method"),
 
-  // Optional discount code validation
+  // Optional discount code
   body("discountCode")
     .optional()
     .trim()
     .isLength({ min: 3, max: 20 })
     .withMessage("Discount code must be between 3 and 20 characters"),
 
-  // Optional notes validation
+  // Optional notes
   body("notes")
     .optional()
     .trim()
     .isLength({ max: 500 })
     .withMessage("Notes cannot exceed 500 characters"),
+
+  // Bank transfer specific validation
+  body("bankTransferInfo")
+    .if(body("paymentMethod").equals(PAYMENT_METHODS.BANK_TRANSFER))
+    .optional()
+    .isObject()
+    .withMessage("Bank transfer info must be an object"),
 ];
 
-exports.updatePaymentStatusValidator = [
-  body("paymentStatus")
+// Validate status update
+exports.updateStatusValidator = [
+  body("status")
     .notEmpty()
-    .withMessage("Payment status is required")
-    .isIn(["pending", "paid", "cancelled"])
-    .withMessage("Invalid payment status"),
+    .withMessage("Status is required")
+    .isIn(Object.values(INVOICE_STATES))
+    .withMessage("Invalid status"),
+
+  body("reason")
+    .if(body("status").isIn([INVOICE_STATES.CANCELED, INVOICE_STATES.REFUNDED]))
+    .notEmpty()
+    .withMessage("Reason is required for cancellation/refund")
+    .trim()
+    .isLength({ min: 3, max: 500 })
+    .withMessage("Reason must be between 3 and 500 characters"),
 
   body("notes")
     .optional()
@@ -62,7 +82,74 @@ exports.updatePaymentStatusValidator = [
     .withMessage("Notes cannot exceed 500 characters"),
 ];
 
+// Validate payment confirmation
+exports.confirmPaymentValidator = [
+  body("amount")
+    .notEmpty()
+    .withMessage("Payment amount is required")
+    .isFloat({ min: 0 })
+    .withMessage("Amount must be greater than 0"),
+
+  body("transactionId")
+    .if(body("paymentMethod").equals(PAYMENT_METHODS.BANK_TRANSFER))
+    .notEmpty()
+    .withMessage("Transaction ID is required for bank transfer")
+    .matches(/^[A-Za-z0-9]{6,20}$/)
+    .withMessage("Invalid transaction ID format"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot exceed 500 characters"),
+];
+
+// Validate refund
+exports.refundValidator = [
+  body("refundAmount")
+    .notEmpty()
+    .withMessage("Refund amount is required")
+    .isFloat({ min: 0 })
+    .withMessage("Refund amount must be greater than 0"),
+
+  body("reason")
+    .notEmpty()
+    .withMessage("Refund reason is required")
+    .trim()
+    .isLength({ min: 3, max: 500 })
+    .withMessage("Reason must be between 3 and 500 characters"),
+
+  body("refundMethod")
+    .notEmpty()
+    .withMessage("Refund method is required")
+    .isIn(["cash", "bank_transfer"])
+    .withMessage("Invalid refund method"),
+
+  body("bankInfo")
+    .if(body("refundMethod").equals("bank_transfer"))
+    .notEmpty()
+    .withMessage("Bank information is required for bank transfer refund")
+    .isObject()
+    .withMessage("Bank information must be an object"),
+];
+
+// Validate list query parameters
 exports.getInvoicesValidator = [
+  query("page")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Page must be a positive integer"),
+
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("Limit must be between 1 and 100"),
+
+  query("status")
+    .optional()
+    .isIn(Object.values(INVOICE_STATES))
+    .withMessage("Invalid status"),
+
   query("startDate")
     .optional()
     .isISO8601()
@@ -78,44 +165,12 @@ exports.getInvoicesValidator = [
       }
       return true;
     }),
-
-  query("paymentStatus")
-    .optional()
-    .isIn(["pending", "paid", "cancelled"])
-    .withMessage("Invalid payment status"),
 
   query("customer").optional().isMongoId().withMessage("Invalid customer ID"),
 ];
 
-exports.getStatisticsValidator = [
-  query("startDate")
-    .optional()
-    .isISO8601()
-    .withMessage("Invalid start date format"),
-
-  query("endDate")
-    .optional()
-    .isISO8601()
-    .withMessage("Invalid end date format")
-    .custom((endDate, { req }) => {
-      if (req.query.startDate && endDate < req.query.startDate) {
-        throw new Error("End date must be after start date");
-      }
-      return true;
-    }),
-
-  query("groupBy")
-    .optional()
-    .isIn(["day", "week", "month", "year"])
-    .withMessage("Invalid grouping option"),
-];
-
-exports.exportInvoicesValidator = [
-  query("format")
-    .optional()
-    .isIn(["csv", "xlsx"])
-    .withMessage("Invalid export format"),
-
+// Validate statistics query
+exports.statisticsValidator = [
   query("startDate")
     .optional()
     .isISO8601()
@@ -126,60 +181,8 @@ exports.exportInvoicesValidator = [
     .isISO8601()
     .withMessage("Invalid end date format"),
 
-  query("status").optional().isIn([0, 1]).withMessage("Invalid status"),
-
-  query("paymentStatus")
+  query("type")
     .optional()
-    .isIn(["pending", "paid", "cancelled"])
-    .withMessage("Invalid payment status"),
+    .isIn(["daily", "monthly", "payment_methods", "top_products"])
+    .withMessage("Invalid statistics type"),
 ];
-
-exports.validateInvoiceItems = (items) => {
-  const errors = [];
-
-  if (!Array.isArray(items) || items.length === 0) {
-    errors.push("At least one item is required");
-    return errors;
-  }
-
-  items.forEach((item, index) => {
-    if (!item.product) {
-      errors.push(`Item ${index + 1}: Product is required`);
-    }
-    if (!item.quantity || item.quantity < 1) {
-      errors.push(`Item ${index + 1}: Valid quantity is required`);
-    }
-    if (item.discount && (item.discount < 0 || item.discount > 100)) {
-      errors.push(`Item ${index + 1}: Discount must be between 0 and 100`);
-    }
-  });
-
-  return errors;
-};
-
-exports.validatePaymentData = async (paymentMethod, amount) => {
-  const errors = [];
-
-  switch (paymentMethod) {
-    case "card":
-      // Add specific card payment validations
-      break;
-    case "bank_transfer":
-      // Add specific bank transfer validations
-      break;
-    case "qr_code":
-      // Add specific QR code validations
-      break;
-    case "cash":
-      // Add specific cash validations
-      break;
-    default:
-      errors.push("Invalid payment method");
-  }
-
-  if (amount <= 0) {
-    errors.push("Invalid payment amount");
-  }
-
-  return errors;
-};

@@ -2,7 +2,10 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const { logAction } = require("../utils/logger");
-const { createHistoryRecord } = require("../utils/historyHandler");
+const {
+  createHistoryRecord,
+  mergeHistory,
+} = require("../utils/historyHandler");
 const jwt = require("jsonwebtoken");
 
 const authLog = logAction("Auth");

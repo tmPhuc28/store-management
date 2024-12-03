@@ -1,6 +1,4 @@
 module.exports = {
-  code: "00",
-  desc: "Get Bank list successful! Total 63 banks",
   data: [
     {
       id: 17,

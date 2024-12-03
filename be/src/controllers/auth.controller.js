@@ -50,12 +50,20 @@ exports.register = async (req, res, next) => {
     };
 
     const user = await authService.register(req.body, reqInfo);
-    const tokens = authService.createTokenResponse(
-      user,
-      user.generateRefreshToken()
-    );
-
-    sendTokenResponse(res, 201, tokens, user);
+    res.status(201).json({
+      success: true,
+      message: "Registration successful. Please login to continue.",
+      data: {
+        user: {
+          _id: user._id,
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          status: user.statusText,
+        },
+      },
+    });
   } catch (error) {
     if (error.message.includes("already registered")) {
       return res.status(400).json({

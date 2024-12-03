@@ -14,6 +14,7 @@ const swaggerSpec = require("./config/swagger");
 // Import routes
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
+const bankRoutes = require("./routes/bank.routes");
 const storeRoutes = require("./routes/store.routes");
 const productRoutes = require("./routes/product.routes");
 const categoryRoutes = require("./routes/category.routes");
@@ -84,11 +85,12 @@ app.use(limiter);
 // Mount routes
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
-app.use("/api/v1/store", storeRoutes);
+app.use("/api/v2/store", storeRoutes);
+app.use("/api/v2/banks", bankRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/customers", customerRoutes);
-app.use("/api/v1/invoices", invoiceRoutes);
+app.use("/api/v2/invoices", invoiceRoutes);
 app.use("/api/v1/discounts", discountRoutes);
 
 // Swagger UI options

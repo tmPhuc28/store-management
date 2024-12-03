@@ -1,6 +1,5 @@
 // src/services/discount.service.js
 const Discount = require("../models/Discount");
-const Product = require("../models/Product");
 const {
   createHistoryRecord,
   mergeHistory,

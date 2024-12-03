@@ -1,0 +1,33 @@
+// src/constants/invoice.constants.js
+
+// Define states first
+const INVOICE_STATES = {
+  PENDING: "pending",
+  CONFIRMED: "confirmed",
+  PAID: "paid",
+  COMPLETED: "completed",
+  CANCELED: "canceled",
+  REFUNDED: "refunded",
+};
+
+const PAYMENT_METHODS = {
+  CASH: "cash",
+  BANK_TRANSFER: "bank_transfer",
+};
+
+// Then use them in STATE_TRANSITIONS
+const STATE_TRANSITIONS = {
+  [INVOICE_STATES.PENDING]: [INVOICE_STATES.CONFIRMED, INVOICE_STATES.CANCELED],
+  [INVOICE_STATES.CONFIRMED]: [INVOICE_STATES.PAID, INVOICE_STATES.CANCELED],
+  [INVOICE_STATES.PAID]: [INVOICE_STATES.COMPLETED, INVOICE_STATES.REFUNDED],
+  [INVOICE_STATES.COMPLETED]: [],
+  [INVOICE_STATES.CANCELED]: [],
+  [INVOICE_STATES.REFUNDED]: [],
+};
+
+// Export all constants
+module.exports = {
+  INVOICE_STATES,
+  PAYMENT_METHODS,
+  STATE_TRANSITIONS,
+};

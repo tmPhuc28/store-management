@@ -1,0 +1,135 @@
+tags:
+  - name: Store
+    description: Store management
+
+components:
+  schemas:
+    Store:
+      type: object
+      required:
+        - name
+        - phone
+        - address
+      properties:
+        name:
+          type: string
+          example: Coffee Shop
+        phone:
+          type: string
+          example: "0283123456"
+        email:
+          type: string
+          format: email
+        address:
+          type: object
+          properties:
+            detail:
+              type: string
+            ward:
+              type: string
+            district:
+              type: string
+            province:
+              type: string
+        taxCode:
+          type: string
+        bankInfo:
+          type: object
+          properties:
+            bankId:
+              type: string
+            accountNumber:
+              type: string
+            accountName:
+              type: string
+
+paths:
+  /api/v2/store:
+    get:
+      summary: Get store information
+      tags:
+        - Store
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+    put:
+      summary: Update store information (Admin only)
+      tags:
+        - Store
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Store"
+      responses:
+        200:
+          description: Store updated successfully
+        403:
+          description: Not admin
+
+  /api/v2/store/bank-info:
+    get:
+      summary: Get store's bank information
+      tags:
+        - Store
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bankId:
+                    type: string
+                  accountNumber:
+                    type: string
+                  accountName:
+                    type: string
+                  bankName:
+                    type: string
+    put:
+      summary: Update store's bank information (Admin only)
+      tags:
+        - Store
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - bankId
+                - accountNumber
+                - accountName
+              properties:
+                bankId:
+                  type: string
+                  example: "MB"
+                accountNumber:
+                  type: string
+                  pattern: ^\d{8,19}$
+                  example: "0987654321"
+                accountName:
+                  type: string
+                  example: "COFFEE SHOP"
+      responses:
+        200:
+          description: Bank info updated successfully
+        400:
+          description: Invalid bank info
+        403:
+          description: Not admin

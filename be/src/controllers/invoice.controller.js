@@ -1,9 +1,14 @@
-// src/controllers/invoice.controller.js
 const { validationResult } = require("express-validator");
-const invoiceService = require("../services/invoice.service");
+const InvoiceService = require("../services/invoice.service");
+const { INVOICE_STATES } = require("../constants/invoice.constants");
 
 class InvoiceController {
-  async getInvoices(req, res, next) {
+  constructor() {
+    this.invoiceService = new InvoiceService();
+  }
+
+  // Get list of invoices
+  getInvoices = async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -13,7 +18,7 @@ class InvoiceController {
         });
       }
 
-      const result = await invoiceService.getInvoices(req.query, req.user);
+      const result = await this.invoiceService.getInvoices(req.query, req.user);
       res.status(200).json({
         success: true,
         ...result,
@@ -21,32 +26,15 @@ class InvoiceController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getInvoice(req, res, next) {
+  // Get single invoice
+  getInvoice = async (req, res, next) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const invoice = await invoiceService.getInvoiceById(req.params.id);
-
-      // If bank transfer method, ensure QR code is up to date
-      if (
-        invoice.paymentMethod === "bank_transfer" &&
-        invoice.paymentStatus === "pending"
-      ) {
-        const qrCode = await invoiceService.generatePaymentQR(invoice);
-        if (qrCode !== invoice.bankTransferInfo.qrCode) {
-          invoice.bankTransferInfo.qrCode = qrCode;
-          await invoice.save();
-        }
-      }
-
+      const invoice = await this.invoiceService.getInvoiceById(
+        req.params.id,
+        req.user
+      );
       res.status(200).json({
         success: true,
         data: invoice,
@@ -60,9 +48,10 @@ class InvoiceController {
       }
       next(error);
     }
-  }
+  };
 
-  async createInvoice(req, res, next) {
+  // Create new invoice
+  createInvoice = async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -72,7 +61,7 @@ class InvoiceController {
         });
       }
 
-      const invoice = await invoiceService.create(req.body, req.user);
+      const invoice = await this.invoiceService.create(req.body, req.user);
       res.status(201).json({
         success: true,
         data: invoice,
@@ -80,8 +69,8 @@ class InvoiceController {
     } catch (error) {
       if (
         error.message.includes("not found") ||
-        error.message.includes("inactive") ||
-        error.message.includes("Insufficient quantity")
+        error.message.includes("insufficient") ||
+        error.message.includes("invalid")
       ) {
         return res.status(400).json({
           success: false,
@@ -90,9 +79,10 @@ class InvoiceController {
       }
       next(error);
     }
-  }
+  };
 
-  async updatePaymentStatus(req, res, next) {
+  // Update invoice status
+  updateStatus = async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -102,9 +92,10 @@ class InvoiceController {
         });
       }
 
-      const invoice = await invoiceService.updatePaymentStatus(
+      const invoice = await this.invoiceService.updateStatus(
         req.params.id,
-        req.body.paymentStatus,
+        req.body.status,
+        req.body,
         req.user
       );
 
@@ -113,13 +104,7 @@ class InvoiceController {
         data: invoice,
       });
     } catch (error) {
-      if (error.message === "Invoice not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (error.message.includes("Cannot update")) {
+      if (error.message.includes("Cannot transition")) {
         return res.status(400).json({
           success: false,
           message: error.message,
@@ -127,9 +112,10 @@ class InvoiceController {
       }
       next(error);
     }
-  }
+  };
 
-  async getInvoiceStatistics(req, res, next) {
+  // Confirm payment
+  confirmPayment = async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -139,7 +125,75 @@ class InvoiceController {
         });
       }
 
-      const stats = await invoiceService.getInvoiceStatistics(req.query);
+      const invoice = await this.invoiceService.confirmPayment(
+        req.params.id,
+        req.body,
+        req.user
+      );
+
+      res.status(200).json({
+        success: true,
+        data: invoice,
+      });
+    } catch (error) {
+      if (
+        error.message.includes("must be in CONFIRMED state") ||
+        error.message.includes("already paid") ||
+        error.message.includes("Transaction ID")
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+      next(error);
+    }
+  };
+
+  // Get payment QR code
+  getPaymentQR = async (req, res, next) => {
+    try {
+      const invoice = await this.invoiceService.getInvoiceById(
+        req.params.id,
+        req.user
+      );
+
+      if (invoice.status !== INVOICE_STATES.PENDING) {
+        return res.status(400).json({
+          success: false,
+          message: "QR code only available for pending invoices",
+        });
+      }
+
+      await this.invoiceService.refreshPaymentQR(invoice);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          qrCode: invoice.paymentInfo?.bankTransfer?.qrCode,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Get daily revenue statistics
+  getDailyRevenue = async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errors: errors.array(),
+        });
+      }
+
+      const stats = await this.invoiceService.getDailyRevenue(
+        req.query.startDate,
+        req.query.endDate
+      );
+
       res.status(200).json({
         success: true,
         data: stats,
@@ -147,9 +201,10 @@ class InvoiceController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getCustomerInvoices(req, res, next) {
+  // Get top selling products
+  getTopProducts = async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -159,9 +214,88 @@ class InvoiceController {
         });
       }
 
-      const result = await invoiceService.getCustomerInvoices(
+      const stats = await this.invoiceService.getTopProducts(
+        req.query.startDate,
+        req.query.endDate,
+        req.query.limit
+      );
+
+      res.status(200).json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Get payment method statistics
+  getPaymentStats = async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errors: errors.array(),
+        });
+      }
+
+      const stats = await this.invoiceService.getPaymentMethodStats(
+        req.query.startDate,
+        req.query.endDate
+      );
+
+      res.status(200).json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+  // Xử lý hoàn tiền
+  handleRefund = async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errors: errors.array(),
+        });
+      }
+
+      const invoice = await this.invoiceService.handleRefund(
+        req.params.id,
+        req.body,
+        req.user
+      );
+
+      res.status(200).json({
+        success: true,
+        data: invoice,
+        message: "Refund processed successfully",
+      });
+    } catch (error) {
+      if (
+        error.message.includes("Invalid refund amount") ||
+        error.message.includes("Bank information required")
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+      next(error);
+    }
+  };
+
+  // Xem lịch sử hóa đơn của khách hàng
+  getCustomerInvoices = async (req, res, next) => {
+    try {
+      const result = await this.invoiceService.getCustomerInvoices(
         req.params.customerId,
-        req.query
+        req.query,
+        req.user
       );
 
       res.status(200).json({
@@ -177,105 +311,33 @@ class InvoiceController {
       }
       next(error);
     }
-  }
+  };
 
-  async downloadInvoice(req, res, next) {
+  // Xuất tổng hợp thống kê
+  getInvoiceStatistics = async (req, res, next) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const pdfBuffer = await invoiceService.generateInvoicePDF(req.params.id);
-
-      res.set({
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=invoice-${req.params.id}.pdf`,
-        "Content-Length": pdfBuffer.length,
-      });
-
-      res.send(pdfBuffer);
-    } catch (error) {
-      if (error.message === "Invoice not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async exportInvoices(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const format = req.query.format || "csv";
-      const fileBuffer = await invoiceService.exportInvoices(req.query, format);
-
-      const contentType =
-        format === "csv"
-          ? "text/csv"
-          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      const extension = format === "csv" ? "csv" : "xlsx";
-
-      res.set({
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename=invoices.${extension}`,
-        "Content-Length": fileBuffer.length,
-      });
-
-      res.send(fileBuffer);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getPaymentQR(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const invoice = await invoiceService.getInvoiceById(req.params.id);
-      if (!invoice) {
-        return res.status(404).json({
-          success: false,
-          message: "Invoice not found",
-        });
-      }
-
-      if (invoice.paymentMethod !== "bank_transfer") {
-        return res.status(400).json({
-          success: false,
-          message: "QR code is only available for bank transfer payments",
-        });
-      }
-
-      const qrData = await invoiceService.generatePaymentQR(invoice);
-
-      res.json({
+      const result = await this.invoiceService.getInvoiceStatistics(req.query);
+      res.status(200).json({
         success: true,
-        data: qrData,
+        data: result,
       });
     } catch (error) {
-      invoiceLog.error("Payment QR generation failed", error);
       next(error);
     }
-  }
+  };
+
+  // Xem chi tiết lịch sử trạng thái
+  getStatusHistory = async (req, res, next) => {
+    try {
+      const invoice = await this.invoiceService.getInvoiceById(req.params.id);
+      res.status(200).json({
+        success: true,
+        data: invoice.statusHistory,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 module.exports = new InvoiceController();

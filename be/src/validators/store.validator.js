@@ -1,12 +1,12 @@
-// src/validators/store.validator.js
+// store.validator.js
 const { body } = require("express-validator");
-const { isSupportedBank } = require("../utils/bankValidator");
 
 exports.updateStoreValidator = [
+  // Store information
   body("name")
-    .trim()
     .notEmpty()
     .withMessage("Store name is required")
+    .trim()
     .isLength({ max: 100 })
     .withMessage("Store name cannot exceed 100 characters"),
 
@@ -23,40 +23,34 @@ exports.updateStoreValidator = [
     .withMessage("Invalid email format")
     .normalizeEmail(),
 
+  // Address validation
   body("address.detail")
     .notEmpty()
     .withMessage("Address detail is required")
     .trim(),
 
   body("address.ward").optional().trim(),
+
   body("address.district").optional().trim(),
+
   body("address.province").optional().trim(),
 
-  body("bankInfo.bankId")
-    .notEmpty()
-    .withMessage("Bank ID is required")
-    .custom((value) => {
-      if (!isSupportedBank(value)) {
-        throw new Error("Selected bank is not supported for VietQR");
-      }
-      return true;
-    }),
+  // Tax code validation
+  body("taxCode")
+    .optional()
+    .trim()
+    .matches(/^[0-9]{10,13}$/)
+    .withMessage("Invalid tax code format"),
+];
 
-  body("bankInfo.accountNumber")
+exports.validateBankInfo = [
+  body("bankId").notEmpty().withMessage("Bank ID is required"),
+
+  body("accountNumber")
     .notEmpty()
     .withMessage("Account number is required")
-    .matches(/^[0-9]{8,19}$/)
+    .matches(/^\d{8,19}$/)
     .withMessage("Account number must be 8-19 digits"),
 
-  body("bankInfo.accountName")
-    .notEmpty()
-    .withMessage("Account name is required")
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("Account name cannot exceed 100 characters"),
-
-  body("bankInfo.template")
-    .optional()
-    .isIn(["compact", "compact2", "qr_only", "print"])
-    .withMessage("Invalid template format"),
+  body("accountName").notEmpty().withMessage("Account name is required").trim(),
 ];
