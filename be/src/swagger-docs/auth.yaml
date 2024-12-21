@@ -1,0 +1,315 @@
+# src/swagger/auth.yaml
+openapi: '3.0.3'
+info:
+  title: Authentication API
+  description: API for user authentication and management
+  version: 1.0.0
+tags:
+  - name: Authentication
+    description: User authentication endpoints
+
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+          example: "john_doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          example: "password123"
+        role:
+          type: integer
+          enum: [0, 1]
+          default: 0
+          description: "0=user, 1=admin (registration always sets to 0)"
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        lastLogin:
+          type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+            ipAddress:
+              type: string
+            userAgent:
+              type: string
+        roleText:
+          type: string
+          enum: ["user", "admin"]
+          readOnly: true
+          description: "Text representation of role"
+        statusText:
+          type: string
+          enum: ["active", "inactive"]
+          readOnly: true
+          description: "Text representation of status"
+
+    UpdateHistory:
+      type: object
+      properties:
+        action:
+          type: string
+          example: "register"
+        updatedBy:
+          type: string
+          nullable: true
+          description: "User ID who made the change, null for system actions"
+        timestamp:
+          type: string
+          format: date-time
+        changes:
+          type: object
+          description: "Object containing changed fields"
+
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user (always as regular user)
+      description: Creates a new user account with role=0 (regular user)
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+                - password
+              properties:
+                username:
+                  type: string
+                  example: "john_doe"
+                email:
+                  type: string
+                  format: email
+                  example: "john@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "password123"
+      responses:
+        201:
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+        400:
+          description: Validation error or duplicate user
+
+  /api/v1/auth/login:
+    post:
+      summary: Login user
+      description: |
+        Login with username/email and password.
+        On successful login:
+        - Sets httpOnly cookies for accessToken and refreshToken
+        - Returns user information and tokens in response
+        - Updates last login information
+        - Stores refresh token in database
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - login
+                - password
+              properties:
+                login:
+                  type: string
+                  description: Username or email
+                  example: "john_doe"
+                password:
+                  type: string
+                  format: password
+                  example: "password123"
+      responses:
+        200:
+          description: Login successful
+          headers:
+            Set-Cookie:
+              description: |
+                Sets two cookies:
+                - accessToken: Short-lived JWT token
+                - refreshToken: Long-lived token for renewal
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                success: true
+                data:
+                  user:
+                    _id: "60d5ecb74e67e4001f3d56f8"
+                    username: "john_doe"
+                    email: "john@example.com"
+                    role: 0
+                    status: 1
+                    roleText: "user"
+                    statusText: "active"
+                  tokens:
+                    accessToken: "eyJhbG..."
+                    refreshToken: "eyJhbG..."
+        400:
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid credentials"
+        401:
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid credentials"
+
+  /api/v1/auth/refresh-token:
+    post:
+      summary: Refresh access token
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        200:
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  accessToken:
+                    type: string
+                    example: "eyJhbG..."
+        401:
+          description: Invalid refresh token
+
+  /api/v1/auth/me:
+    get:
+      summary: Get current user profile
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        401:
+          description: Not authenticated
+
+  /api/v1/auth/logout:
+    post:
+      summary: Logout user
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Logged out successfully
+        401:
+          description: Not authenticated
+
+  /api/v1/auth/logout-all:
+    post:
+      summary: Logout from all devices
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Logged out from all devices successfully
+        401:
+          description: Not authenticated
+
+  /api/v1/auth/change-password:
+    post:
+      summary: Change password
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - oldPassword
+                - newPassword
+              properties:
+                oldPassword:
+                  type: string
+                  format: password
+                  example: "oldPassword123"
+                newPassword:
+                  type: string
+                  format: password
+                  example: "newPassword123"
+      responses:
+        200:
+          description: Password changed successfully
+        400:
+          description: Invalid password
+        401:
+          description: Not authenticated

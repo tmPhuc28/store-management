@@ -1,0 +1,515 @@
+openapi: 3.0.0
+info:
+  title: Store Management API
+  version: 1.0.0
+  description: API documentation for the Store Management system
+tags:
+  - name: Categories
+    description: Product category management endpoints
+
+components:
+  schemas:
+    Category:
+      type: object
+      required:
+        - name
+        - code
+      properties:
+        name:
+          type: string
+          example: "Electronics"
+        code:
+          type: string
+          example: "ELEC"
+        description:
+          type: string
+          example: "Electronic devices and accessories"
+        parentCategory:
+          type: string
+          description: Reference to parent category ID
+        path:
+          type: array
+          items:
+            type: string
+          description: Array of ancestor category IDs
+        level:
+          type: integer
+          example: 1
+          description: Category depth level (0 for root)
+        isLeaf:
+          type: boolean
+          example: true
+          description: Whether category has children
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        createdBy:
+          type: string
+          description: Reference to User
+        statusText:
+          type: string
+          enum: [active, inactive]
+          readOnly: true
+        fullPath:
+          type: string
+          readOnly: true
+          example: "Electronics > Smartphones"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+paths:
+  /api/v1/categories:
+    get:
+      summary: Get all categories
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Results per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in name, code, or description
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: Filter by status
+        - in: query
+          name: level
+          schema:
+            type: integer
+            minimum: 0
+          description: Filter by level
+        - in: query
+          name: isLeaf
+          schema:
+            type: boolean
+          description: Filter leaf/non-leaf categories
+        - in: query
+          name: parent
+          schema:
+            type: string
+          description: Filter by parent category (use 'null' for root categories)
+        - in: query
+          name: sort
+          schema:
+            type: string
+          description: Sort field (prefix with - for DESC)
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  pages:
+                    type: integer
+
+    post:
+      summary: Create new category (Admin)
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+      responses:
+        201:
+          description: Created successfully
+        400:
+          description: Validation error
+        401:
+          description: Not authenticated
+        403:
+          description: Not authorized
+
+  /api/v1/categories/roots:
+    get:
+      summary: Get root categories
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: onlyActive
+          schema:
+            type: boolean
+            default: true
+          description: Only return active categories
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+  /api/v1/categories/leaves:
+    get:
+      summary: Get leaf categories
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: activeOnly
+          schema:
+            type: boolean
+            default: true
+          description: Only return active categories
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+  /api/v1/categories/{id}:
+    get:
+      summary: Get category by ID
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        404:
+          description: Category not found
+
+    put:
+      summary: Update category (Admin)
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+      responses:
+        200:
+          description: Updated successfully
+        400:
+          description: Validation error
+        404:
+          description: Category not found
+
+    delete:
+      summary: Delete category (Admin)
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Deleted successfully
+        400:
+          description: Cannot delete category with subcategories or products
+        404:
+          description: Category not found
+
+  /api/v1/categories/{id}/status:
+    patch:
+      summary: Update category status (Admin)
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status value or cannot update status
+        404:
+          description: Category not found
+
+  /api/v1/categories/{id}/path:
+    get:
+      summary: Get category path from root
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+        404:
+          description: Category not found
+
+  /api/v1/categories/{id}/children:
+    get:
+      summary: Get direct child categories
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: onlyActive
+          schema:
+            type: boolean
+            default: true
+          description: Only return active categories
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+        404:
+          description: Category not found
+
+  /api/v1/categories/{id}/descendants:
+    get:
+      summary: Get all descendant categories
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: onlyActive
+          schema:
+            type: boolean
+            default: true
+          description: Only return active categories
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+        404:
+          description: Category not found
+
+  /api/v1/categories/{id}/history:
+    get:
+      summary: Get category update history
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [timestamp, -timestamp]
+            default: -timestamp
+          description: Sort by timestamp
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            updatedBy:
+                              type: object
+                              properties:
+                                _id:
+                                  type: string
+                                username:
+                                  type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                            changes:
+                              type: object
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+        404:
+          description: Category not found
+
+    delete:
+      summary: Clear all history for a category
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: History cleared successfully
+        404:
+          description: Category not found
+
+  /api/v1/categories/{id}/history/{historyId}:
+    delete:
+      summary: Delete specific history entry
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: historyId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: History entry deleted successfully
+        404:
+          description: Category or history entry not found

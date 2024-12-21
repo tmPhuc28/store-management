@@ -1,0 +1,629 @@
+# src/swagger/customer.yaml
+openapi: 3.0.0
+info:
+  title: Customer API
+  description: API documentation for customer management
+  version: 1.0.0
+tags:
+  - name: Customers
+    description: Customer management endpoints
+
+components:
+  schemas:
+    Address:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "123 Main Street"
+        ward:
+          type: string
+          example: "Ward 1"
+        district:
+          type: string
+          example: "District 1"
+        province:
+          type: string
+          example: "Ho Chi Minh City"
+
+    Customer:
+      type: object
+      required:
+        - name
+        - phone
+      properties:
+        name:
+          type: string
+          example: "John Doe"
+          minLength: 2
+          maxLength: 100
+        phone:
+          type: string
+          example: "0123456789"
+          pattern: ^[0-9+\-\s()]*$
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        address:
+          $ref: '#/components/schemas/Address'
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        notes:
+          type: string
+          maxLength: 500
+        totalPurchases:
+          type: integer
+          readOnly: true
+          example: 10
+        totalSpent:
+          type: number
+          readOnly: true
+          example: 1500000
+        averageOrderValue:
+          type: number
+          readOnly: true
+          example: 150000
+        lastPurchaseDate:
+          type: string
+          format: date-time
+          readOnly: true
+        statusText:
+          type: string
+          enum: [active, inactive]
+          readOnly: true
+        fullAddress:
+          type: string
+          readOnly: true
+          example: "123 Main Street, Ward 1, District 1, Ho Chi Minh City"
+
+    CustomerHistory:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [create, update, status_change]
+        updatedBy:
+          type: object
+          properties:
+            _id:
+              type: string
+            username:
+              type: string
+        timestamp:
+          type: string
+          format: date-time
+        changes:
+          type: object
+
+    CustomerStatistics:
+      type: object
+      properties:
+        totalOrders:
+          type: integer
+          description: Total number of completed orders
+        totalSpent:
+          type: number
+          description: Total amount spent
+        averageOrder:
+          type: number
+          description: Average order value
+        firstPurchase:
+          type: string
+          format: date-time
+        lastPurchase:
+          type: string
+          format: date-time
+        paymentMethods:
+          type: object
+          properties:
+            cash:
+              type: object
+              properties:
+                count:
+                  type: integer
+                total:
+                  type: number
+            bank_transfer:
+              type: object
+              properties:
+                count:
+                  type: integer
+                total:
+                  type: number
+                  
+paths:
+  /api/v1/customers:
+    get:
+      summary: Get all customers
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in name, email, or phone
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+        - in: query
+          name: minPurchases
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: minSpent
+          schema:
+            type: number
+            minimum: 0
+        - in: query
+          name: lastPurchaseFrom
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: lastPurchaseTo
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: sortBy
+          schema:
+            type: string
+          example: "-createdAt"
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  pages:
+                    type: integer
+    
+    post:
+      summary: Create new customer
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Customer'
+      responses:
+        201:
+          description: Customer created successfully
+        400:
+          description: Validation error or duplicate fields
+
+  /api/v1/customers/{id}:
+    get:
+      summary: Get customer by ID
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        404:
+          description: Customer not found
+
+    put:
+      summary: Update customer
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Customer'
+      responses:
+        200:
+          description: Customer updated successfully
+        400:
+          description: Validation error
+        404:
+          description: Customer not found
+
+    delete:
+      summary: Delete customer (Admin only)
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Customer deleted successfully
+        400:
+          description: Cannot delete customer with purchase history
+        404:
+          description: Customer not found
+
+  /api/v1/customers/{id}/status:
+    patch:
+      summary: Update customer status (Admin only)
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status or cannot deactivate
+        404:
+          description: Customer not found
+
+  /api/v1/customers/{id}/statistics:
+    get:
+      summary: Get customer statistics
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerStatistics'
+        404:
+          description: Customer not found
+
+  /api/v1/customers/{id}/purchases:
+    get:
+      summary: Get customer purchase history
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: minAmount
+          schema:
+            type: number
+            minimum: 0
+        - in: query
+          name: maxAmount
+          schema:
+            type: number
+            minimum: 0
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      history:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            _id:
+                              type: string
+                            invoiceNumber:
+                              type: string
+                            total:
+                              type: number
+                            status:
+                              type: string
+                            createdAt:
+                              type: string
+                              format: date-time
+                            items:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  product:
+                                    type: object
+                                    properties:
+                                      name:
+                                        type: string
+                                      price:
+                                        type: number
+                                  quantity:
+                                    type: integer
+                      stats:
+                        type: object
+                        properties:
+                          totalPurchases:
+                            type: integer
+                          totalSpent:
+                            type: number
+                          averageOrderValue:
+                            type: number
+                          lastPurchaseDate:
+                            type: string
+                            format: date-time
+        404:
+          description: Customer not found
+
+  /api/v1/customers/{id}/update-stats:
+    post:
+      summary: Update customer stats manually (Admin only)
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Stats updated successfully
+        404:
+          description: Customer not found
+
+  /api/v1/customers/{id}/history:
+    get:
+      summary: Get customer update history
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Customer ID
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1 
+            minimum: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [timestamp, -timestamp]
+            default: -timestamp
+          description: Sort by timestamp (prefix with - for DESC)
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                              enum: [create, update, status_change]
+                            updatedBy:
+                              type: object
+                              properties:
+                                _id:
+                                  type: string
+                                username:
+                                  type: string
+                                email:
+                                  type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                            changes:
+                              type: object
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+        404:
+          description: Customer not found
+
+    delete:
+      summary: Clear all history for a customer
+      tags: [Customers] 
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Customer ID
+      responses:
+        200:
+          description: History cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    description: New history array with clear record
+                    items:
+                      $ref: '#/components/schemas/CustomerHistory'
+        404:
+          description: Customer not found
+        403:
+          description: Not authorized to clear history
+        401:
+          description: Not authenticated
+
+  /api/v1/customers/{id}/history/{historyId}:
+    delete:
+      summary: Delete specific history entry
+      tags: [Customers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Customer ID
+        - in: path
+          name: historyId
+          required: true
+          schema:
+            type: string
+          description: History entry ID  
+      responses:
+        200:
+          description: History entry deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    description: Updated history array after deletion
+                    items:
+                      $ref: '#/components/schemas/CustomerHistory'
+        404:
+          description: Customer or history entry not found 
+        403:
+          description: Not authorized to delete history
+        401:
+          description: Not authenticated

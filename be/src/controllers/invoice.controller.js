@@ -1,343 +1,168 @@
-const { validationResult } = require("express-validator");
+// src/controllers/invoice.controller.js
+const BaseController = require("./base/base.controller");
 const InvoiceService = require("../services/invoice.service");
-const { INVOICE_STATES } = require("../constants/invoice.constants");
+const ResponseHandler = require("../utils/responseHandler");
 
-class InvoiceController {
+class InvoiceController extends BaseController {
   constructor() {
-    this.invoiceService = new InvoiceService();
+    super(InvoiceService);
   }
 
-  // Get list of invoices
-  getInvoices = async (req, res, next) => {
+  /**
+   * Create new invoice
+   */
+  create = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      this.validateRequest(req);
 
-      const result = await this.invoiceService.getInvoices(req.query, req.user);
-      res.status(200).json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
+      const invoice = await this.service.create(req.body, req.user);
 
-  // Get single invoice
-  getInvoice = async (req, res, next) => {
-    try {
-      const invoice = await this.invoiceService.getInvoiceById(
-        req.params.id,
-        req.user
+      const response = ResponseHandler.success(
+        invoice,
+        "Invoice created successfully",
+        201
       );
-      res.status(200).json({
-        success: true,
-        data: invoice,
-      });
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Invoice not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  // Create new invoice
-  createInvoice = async (req, res, next) => {
+  /**
+   * Update invoice status
+   */
+  updateStatus = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      this.validateRequest(req);
 
-      const invoice = await this.invoiceService.create(req.body, req.user);
-      res.status(201).json({
-        success: true,
-        data: invoice,
-      });
-    } catch (error) {
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("insufficient") ||
-        error.message.includes("invalid")
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  };
-
-  // Update invoice status
-  updateStatus = async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const invoice = await this.invoiceService.updateStatus(
+      const invoice = await this.service.updateStatus(
         req.params.id,
         req.body.status,
         req.body,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        data: invoice,
-      });
+      const response = ResponseHandler.success(
+        invoice,
+        "Invoice status updated successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message.includes("Cannot transition")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  // Confirm payment
-  confirmPayment = async (req, res, next) => {
+  /**
+   * Confirm invoice payment
+   */
+  confirmPayment = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      this.validateRequest(req);
 
-      const invoice = await this.invoiceService.confirmPayment(
+      const invoice = await this.service.updateStatus(
         req.params.id,
+        "paid",
         req.body,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        data: invoice,
-      });
+      const response = ResponseHandler.success(
+        invoice,
+        "Payment confirmed successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (
-        error.message.includes("must be in CONFIRMED state") ||
-        error.message.includes("already paid") ||
-        error.message.includes("Transaction ID")
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  // Get payment QR code
-  getPaymentQR = async (req, res, next) => {
+  /**
+   * Cancel invoice
+   */
+  cancelInvoice = async (req, res) => {
     try {
-      const invoice = await this.invoiceService.getInvoiceById(
+      this.validateRequest(req);
+
+      const invoice = await this.service.updateStatus(
         req.params.id,
-        req.user
-      );
-
-      if (invoice.status !== INVOICE_STATES.PENDING) {
-        return res.status(400).json({
-          success: false,
-          message: "QR code only available for pending invoices",
-        });
-      }
-
-      await this.invoiceService.refreshPaymentQR(invoice);
-
-      res.status(200).json({
-        success: true,
-        data: {
-          qrCode: invoice.paymentInfo?.bankTransfer?.qrCode,
-        },
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  // Get daily revenue statistics
-  getDailyRevenue = async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const stats = await this.invoiceService.getDailyRevenue(
-        req.query.startDate,
-        req.query.endDate
-      );
-
-      res.status(200).json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  // Get top selling products
-  getTopProducts = async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const stats = await this.invoiceService.getTopProducts(
-        req.query.startDate,
-        req.query.endDate,
-        req.query.limit
-      );
-
-      res.status(200).json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  // Get payment method statistics
-  getPaymentStats = async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const stats = await this.invoiceService.getPaymentMethodStats(
-        req.query.startDate,
-        req.query.endDate
-      );
-
-      res.status(200).json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-  // Xử lý hoàn tiền
-  handleRefund = async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const invoice = await this.invoiceService.handleRefund(
-        req.params.id,
+        "canceled",
         req.body,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        data: invoice,
-        message: "Refund processed successfully",
-      });
+      const response = ResponseHandler.success(
+        invoice,
+        "Invoice canceled successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (
-        error.message.includes("Invalid refund amount") ||
-        error.message.includes("Bank information required")
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  // Xem lịch sử hóa đơn của khách hàng
-  getCustomerInvoices = async (req, res, next) => {
+  /**
+   * Process refund
+   */
+  processRefund = async (req, res) => {
     try {
-      const result = await this.invoiceService.getCustomerInvoices(
-        req.params.customerId,
-        req.query,
+      this.validateRequest(req);
+
+      const invoice = await this.service.updateStatus(
+        req.params.id,
+        "refunded",
+        req.body,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        ...result,
-      });
+      const response = ResponseHandler.success(
+        invoice,
+        "Refund processed successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Customer not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  // Xuất tổng hợp thống kê
-  getInvoiceStatistics = async (req, res, next) => {
+  /**
+   * Get invoice statistics
+   */
+  getStatistics = async (req, res) => {
     try {
-      const result = await this.invoiceService.getInvoiceStatistics(req.query);
-      res.status(200).json({
-        success: true,
-        data: result,
-      });
+      this.validateRequest(req);
+
+      const stats = await this.service.getStatistics(req.query);
+
+      const response = ResponseHandler.success(stats);
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  // Xem chi tiết lịch sử trạng thái
-  getStatusHistory = async (req, res, next) => {
+  /**
+   * Get customer invoices
+   */
+  getCustomerInvoices = async (req, res) => {
     try {
-      const invoice = await this.invoiceService.getInvoiceById(req.params.id);
-      res.status(200).json({
-        success: true,
-        data: invoice.statusHistory,
-      });
+      const { customerId } = req.params;
+      const query = { ...req.query, customer: customerId };
+
+      const result = await this.service.find(query);
+
+      const response = ResponseHandler.success(result);
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 }
 
-module.exports = new InvoiceController();
+module.exports = InvoiceController;

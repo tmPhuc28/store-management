@@ -14,13 +14,18 @@ const swaggerSpec = require("./config/swagger");
 // Import routes
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
-const bankRoutes = require("./routes/bank.routes");
+const paymentRoutes = require("./routes/payment.routes");
 const storeRoutes = require("./routes/store.routes");
+const employeeRoutes = require("./routes/employee.routes");
+const manufacturerRoutes = require("./routes/manufacturer.routes");
+const supplierRoutes = require("./routes/supplier.routes");
+const productLocationRoutes = require("./routes/productLocation.routes");
+const productDiscountRoutes = require("./routes/productDiscount.routes");
+const invoiceDiscountRoutes = require("./routes/invoiceDiscount.routes");
 const productRoutes = require("./routes/product.routes");
 const categoryRoutes = require("./routes/category.routes");
 const customerRoutes = require("./routes/customer.routes");
 const invoiceRoutes = require("./routes/invoice.routes");
-const discountRoutes = require("./routes/discount.routes");
 
 // Initialize express app
 const app = express();
@@ -42,19 +47,18 @@ app.set("stockAlertService", stockAlertService);
 // CORS Configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Cho phép các origins được cấu hình trong env
     const allowedOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(",")
-      : ["http://localhost:3000"]; // Default cho development
+      : ["http://localhost:3000"]; // Default for development
 
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true, // Cho phép gửi cookies qua CORS
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  credentials: process.env.CORS_CREDENTIALS === "true",
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
     "Authorization",
@@ -62,11 +66,13 @@ const corsOptions = {
     "Accept",
   ],
   exposedHeaders: ["set-cookie"],
+  optionsSuccessStatus: 200,
 };
 
 // Security Middleware
 app.use(helmet());
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // Cookie Parser
 app.use(cookieParser(process.env.COOKIE_SECRET));
@@ -85,13 +91,18 @@ app.use(limiter);
 // Mount routes
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/employees", employeeRoutes);
+app.use("/api/v1/manufacturers", manufacturerRoutes);
+app.use("/api/v1/suppliers", supplierRoutes);
+app.use("/api/v1/product-locations", productLocationRoutes);
+app.use("/api/v1/product-discounts", productDiscountRoutes);
+app.use("/api/v1/invoice-discounts", invoiceDiscountRoutes);
 app.use("/api/v2/store", storeRoutes);
-app.use("/api/v2/banks", bankRoutes);
+app.use("/api/v2/payments", paymentRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/customers", customerRoutes);
-app.use("/api/v2/invoices", invoiceRoutes);
-app.use("/api/v1/discounts", discountRoutes);
+app.use("/api/v1/invoices", invoiceRoutes);
 
 // Swagger UI options
 const swaggerUiOptions = {

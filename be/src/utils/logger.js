@@ -37,18 +37,24 @@ if (process.env.NODE_ENV !== "production") {
   );
 }
 
-// Các hàm tiện ích để log
 const logAction = (action) => ({
   success: (message, meta = {}) => {
     logger.info({ action, status: "success", message, ...meta });
   },
-  error: (message, error, meta = {}) => {
+  error: (message, error = null, meta = {}) => {
+    const errorInfo = error
+      ? {
+          errorMessage: error.message || "Unknown error",
+          stack: error.stack,
+          ...error,
+        }
+      : null;
+
     logger.error({
       action,
       status: "error",
-      message,
-      error: error.message,
-      stack: error.stack,
+      message: message || "An error occurred",
+      error: errorInfo,
       ...meta,
     });
   },

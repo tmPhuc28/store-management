@@ -3,25 +3,15 @@ const { body } = require("express-validator");
 
 // User update validation
 exports.updateUserValidator = [
-  body("firstName")
+  body("username")
     .optional()
     .trim()
     .notEmpty()
-    .withMessage("First name cannot be empty if provided")
-    .isLength({ max: 50 })
-    .withMessage("First name cannot be more than 50 characters")
-    .matches(/^[a-zA-ZÀ-ỹ\s]+$/)
-    .withMessage("First name can only contain letters and spaces"),
-
-  body("lastName")
-    .optional()
-    .trim()
-    .notEmpty()
-    .withMessage("Last name cannot be empty if provided")
-    .isLength({ max: 50 })
-    .withMessage("Last name cannot be more than 50 characters")
-    .matches(/^[a-zA-ZÀ-ỹ\s]+$/)
-    .withMessage("Last name can only contain letters and spaces"),
+    .withMessage("Username cannot be empty if provided")
+    .isLength({ min: 3 })
+    .withMessage("Username must be at least 3 characters long")
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage("Username can only contain letters, numbers and underscore"),
 
   body("email")
     .optional()
@@ -30,88 +20,39 @@ exports.updateUserValidator = [
     .normalizeEmail()
     .toLowerCase(),
 
-  body("phone")
+  body("role")
     .optional()
-    .trim()
-    .matches(/^[0-9+\-\s()]*$/)
-    .withMessage("Please provide a valid phone number"),
-
-  body("dateOfBirth")
-    .optional()
-    .isISO8601()
-    .withMessage("Invalid date format")
-    .custom((value) => {
-      const date = new Date(value);
-      const now = new Date();
-      const minDate = new Date().setFullYear(now.getFullYear() - 100);
-      if (date > now || date < minDate) {
-        throw new Error("Invalid date of birth");
-      }
-      return true;
-    }),
-
-  body("gender")
-    .optional()
-    .isIn(["male", "female", "other"])
-    .withMessage("Invalid gender specified"),
-
-  body("address")
-    .optional()
-    .isObject()
-    .withMessage("Address must be an object"),
-
-  body("address.detail")
-    .optional()
-    .trim()
-    .isLength({ max: 200 })
-    .withMessage("Address detail cannot exceed 200 characters"),
-
-  body("address.ward")
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("Ward name cannot exceed 100 characters"),
-
-  body("address.district")
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("District name cannot exceed 100 characters"),
-
-  body("address.province")
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("Province name cannot exceed 100 characters"),
+    .isIn([0, 1])
+    .withMessage("Invalid role value")
+    .toInt(),
 
   body("role")
     .optional()
-    .isIn(["admin", "user"])
-    .withMessage("Invalid role specified"),
+    .isIn([0, 1])
+    .withMessage("Invalid role value")
+    .toInt(),
+
+  body("employee")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid employee ID format"),
+
+  // Prevent updating sensitive fields
+  body([
+    "password",
+    "refreshTokens",
+    "resetPasswordToken",
+    "resetPasswordExpire",
+  ])
+    .not()
+    .exists()
+    .withMessage("Cannot update sensitive fields through this endpoint"),
 ];
 
 // Custom validation middleware
 exports.validateUserUpdate = async (req, res, next) => {
   try {
-    // Prevent updating sensitive fields directly
-    const sensitiveFields = [
-      "password",
-      "refreshTokens",
-      "resetPasswordToken",
-      "resetPasswordExpire",
-    ];
-    const updates = Object.keys(req.body);
-
-    const hasInvalidFields = updates.some((field) =>
-      sensitiveFields.includes(field)
-    );
-    if (hasInvalidFields) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot update sensitive fields through this endpoint",
-      });
-    }
-
+    // Additional custom validations if needed
     next();
   } catch (error) {
     next(error);

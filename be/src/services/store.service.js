@@ -1,10 +1,7 @@
-const BaseService = require("./base.service");
-const BankService = require("./bank.service");
+// src/services/store.service.js
+const BaseService = require("./base/base.service");
 const Store = require("../models/Store");
-const {
-  createHistoryRecord,
-  mergeHistory,
-} = require("../utils/historyHandler");
+const PaymentService = require("./payment.service");
 
 class StoreService extends BaseService {
   constructor() {
@@ -16,7 +13,10 @@ class StoreService extends BaseService {
       "address.district",
       "address.province",
     ];
-    this.bankService = new BankService();
+    this.useHistory = true;
+    this.useTransactions = true;
+    this.excludeFields = [...this.excludeFields];
+    this.paymentService = PaymentService;
   }
 
   /**
@@ -30,6 +30,19 @@ class StoreService extends BaseService {
 
       if (!store) {
         throw new Error("Store information not found");
+      }
+
+      // Get bank name if bank info exists
+      if (store.bankInfo?.bankId) {
+        try {
+          const bankDetails = await this.paymentService.findBank(
+            store.bankInfo.bankId
+          );
+          store.bankInfo.bankName = bankDetails.name;
+        } catch (error) {
+          this.logger.error("Failed to get bank details", error);
+          // Don't throw error as this is not critical
+        }
       }
 
       return store;
@@ -61,86 +74,127 @@ class StoreService extends BaseService {
    * Create or Update store information
    */
   async updateStore(data, user) {
+    let session = null;
     try {
+      session = await this.startTransaction();
+
       if (data.bankInfo) {
-        // Validate bank info trước khi lưu
-        const validatedBankInfo = await this.bankService.validateBankInfo(
+        const validatedBankInfo = await this.paymentService.validateBankInfo(
           data.bankInfo
         );
         data.bankInfo = validatedBankInfo;
       }
 
-      const normalizedData = await this.validateAndNormalize(data);
-
       let store = await this.model.findOne();
-      let isNew = !store;
+      const isNew = !store;
 
-      const historyRecord = createHistoryRecord(
-        user,
-        normalizedData,
-        isNew ? "create" : "update"
-      );
+      if (isNew) {
+        const createData = {
+          ...data,
+          updateHistory: [
+            {
+              action: "create",
+              updatedBy: user._id,
+              changes: {
+                ...data,
+                bankInfo: data.bankInfo ? "[secured]" : undefined,
+              },
+            },
+          ],
+        };
 
-      const updateHistory = isNew
-        ? [historyRecord]
-        : mergeHistory(store.updateHistory, historyRecord);
+        const result = await this.model.create([createData], { session });
+        store = result[0];
+      } else {
+        const historyRecord = {
+          action: "update",
+          updatedBy: user._id,
+          changes: {
+            ...data,
+            bankInfo: data.bankInfo ? "[secured]" : undefined,
+          },
+        };
 
-      const updatedStore = await this.model.findOneAndUpdate(
-        {},
+        store = await this.model.findByIdAndUpdate(
+          store._id,
+          {
+            ...data,
+            $push: { updateHistory: historyRecord },
+          },
+          { new: true, session }
+        );
+      }
+
+      await this.endTransaction(session, true);
+
+      this.logger.success(
+        `${isNew ? "Created" : "Updated"} store information`,
         {
-          ...normalizedData,
-          updateHistory,
-        },
-        {
-          new: true,
-          upsert: true,
-          runValidators: true,
+          storeId: store._id,
+          userId: user._id,
         }
       );
 
-      return updatedStore;
+      return store;
     } catch (error) {
+      await this.endTransaction(session, false);
       this.logger.error("Failed to update store", error);
       throw error;
     }
   }
 
   /**
-   * Update bank information for store
+   * Update bank information
    */
   async updateBankInfo(bankInfo, user) {
     try {
-      const validatedBankInfo = await this.bankService.validateBankInfo(
+      const validatedBankInfo = await this.paymentService.validateBankInfo(
         bankInfo
       );
+      const store = await this.getStoreInfo();
 
-      const store = await this.model.findOne();
-      if (!store) {
-        throw new Error("Store not found");
+      const updatedStore = await this.update(
+        store._id,
+        { bankInfo: validatedBankInfo },
+        user
+      );
+
+      // Generate new QR code for store
+      try {
+        const qrUrl = await this.paymentService.generateQRUrl({
+          bankInfo: validatedBankInfo,
+          template: "compact2",
+        });
+        updatedStore.bankInfo.qrCode = qrUrl;
+        await updatedStore.save();
+      } catch (error) {
+        this.logger.error("Failed to generate QR code", error);
+        // Don't throw error as this is not critical
       }
 
-      const historyRecord = createHistoryRecord(
-        user,
-        { bankInfo: validatedBankInfo },
-        "update_bank_info"
-      );
-      const updateHistory = mergeHistory(store.updateHistory, historyRecord);
+      this.logger.success("Updated bank information", {
+        storeId: store._id,
+        userId: user._id,
+      });
 
-      const updatedStore = await this.model.findOneAndUpdate(
-        {},
-        {
-          bankInfo: validatedBankInfo,
-          updateHistory,
-        },
-        { new: true }
-      );
-
-      return updatedStore;
+      return updatedStore.bankInfo;
     } catch (error) {
       this.logger.error("Failed to update bank info", error);
       throw error;
     }
   }
+
+  /**
+   * Override base methods
+   */
+  getSearchFields() {
+    return ["name", "phone", "email", "taxCode"];
+  }
+
+  async validateUnique(data, excludeId = null) {
+    // Store is singleton, no need to check uniqueness
+    return true;
+  }
 }
 
-module.exports = StoreService;
+module.exports = new StoreService();

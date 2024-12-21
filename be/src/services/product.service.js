@@ -1,560 +1,450 @@
 // src/services/product.service.js
+const BaseService = require("./base/base.service");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
-const normalizeData = require("../utils/normalizeData");
+const Manufacturer = require("../models/Manufacturer");
+const Supplier = require("../models/Supplier");
 const { checkDuplicate } = require("../utils/duplicateCheck");
-const {
-  createHistoryRecord,
-  mergeHistory,
-} = require("../utils/historyHandler");
-const { logAction } = require("../utils/logger");
-const { validateGeneralStatusChange } = require("../utils/statusValidator");
-const generateQRCode = require("qrcode");
 const generateBarcode = require("../utils/barcodeGenerator");
+const QRCode = require("qrcode");
+const ProductLocationService = require("./productLocation.service");
 
-const productLog = logAction("Product");
-
-class ProductService {
+class ProductService extends BaseService {
   constructor() {
+    super(Product, "Product");
     this.nullableFields = [
       "description",
       "manufacturer",
       "supplier",
-      "variants",
+      "discount",
+      "maxQuantity",
+      "variantOptions",
       "images",
+      "specifications",
+      "warranty.description",
     ];
-    this.model = Product;
+    this.useHistory = true;
+    this.useTransactions = true;
+    this.excludeFields = [...this.excludeFields];
+    this.locationService = ProductLocationService;
   }
 
-  async getProducts(query = {}, user) {
-    try {
-      const {
-        page = 1,
-        limit = 10,
-        search = "",
-        category,
-        status,
-        sortBy = "-createdAt",
-      } = query;
+  getSearchFields() {
+    return ["name", "code", "sku", "description"];
+  }
 
-      const startIndex = (page - 1) * limit;
-      let queryObj = {};
+  getPopulateConfig(view = "list") {
+    const configs = {
+      list: [
+        { path: "category", select: "name" },
+        { path: "manufacturer", select: "name" },
+        { path: "supplier", select: "name" },
+        { path: "createdBy", select: "username" },
+      ],
+      detail: [
+        { path: "category", select: "name code path" },
+        { path: "categoryPath", select: "name code" },
+        { path: "manufacturer", select: "name code" },
+        { path: "supplier", select: "name code" },
+        { path: "createdBy", select: "username email" },
+        { path: "discontinuedBy", select: "username email" },
+        { path: "updateHistory.updatedBy", select: "username email" },
+        {
+          path: "locations",
+          match: { status: 1 },
+          select: "-updateHistory",
+        },
+      ],
+    };
+    return configs[view] || configs.list;
+  }
 
-      // Build search query
-      if (search) {
-        queryObj.$or = [
-          { name: { $regex: search, $options: "i" } },
-          { sku: { $regex: search, $options: "i" } },
-          { description: { $regex: search, $options: "i" } },
+  buildCustomQuery(params) {
+    const query = {};
+
+    if (params.status !== undefined) {
+      query.status = parseInt(params.status);
+    }
+
+    if (params.category) {
+      query.categoryPath = params.category;
+    }
+
+    if (params.manufacturer) {
+      query.manufacturer = params.manufacturer;
+    }
+
+    if (params.supplier) {
+      query.supplier = params.supplier;
+    }
+
+    if (params.minPrice !== undefined) {
+      query.currentPrice = { $gte: parseFloat(params.minPrice) };
+    }
+
+    if (params.maxPrice !== undefined) {
+      query.currentPrice = {
+        ...query.currentPrice,
+        $lte: parseFloat(params.maxPrice),
+      };
+    }
+
+    if (params.hasStock !== undefined) {
+      query.quantity = params.hasStock === "true" ? { $gt: 0 } : 0;
+    }
+
+    if (params.isDiscontinued !== undefined) {
+      query.isDiscontinued = params.isDiscontinued === "true";
+    }
+
+    if (params.hasDiscount !== undefined) {
+      if (params.hasDiscount === "true") {
+        const now = new Date();
+        query.discount = { $ne: null };
+        query["discount.startDate"] = { $lte: now };
+        query.$or = [
+          { "discount.endDate": null },
+          { "discount.endDate": { $gt: now } },
+        ];
+      } else {
+        query.$or = [
+          { discount: null },
+          {
+            $or: [
+              { "discount.startDate": { $gt: new Date() } },
+              { "discount.endDate": { $lte: new Date() } },
+            ],
+          },
         ];
       }
-
-      // Category filter with subcategories support
-      if (category) {
-        const categoryDoc = await Category.findById(category);
-        if (categoryDoc) {
-          queryObj.categoryPath = categoryDoc._id;
-        }
-      }
-
-      if (status !== undefined) {
-        queryObj.status = parseInt(status);
-      }
-
-      const [total, products] = await Promise.all([
-        this.model.countDocuments(queryObj),
-        this.model
-          .find(queryObj)
-          .populate("category", "name")
-          .populate("categoryPath", "name")
-          .sort(sortBy)
-          .skip(startIndex)
-          .limit(parseInt(limit)),
-      ]);
-
-      productLog.success("Retrieved products list", {
-        userId: user?._id,
-        query: queryObj,
-      });
-
-      return {
-        count: products.length,
-        total,
-        totalPages: Math.ceil(total / limit),
-        currentPage: parseInt(page),
-        data: products,
-      };
-    } catch (error) {
-      productLog.error("Failed to retrieve products", error);
-      throw error;
     }
+
+    return query;
   }
 
-  async validateProduct(data, productId = null) {
-    // Check for duplicate SKU
-    if (data.sku) {
+  async validateUnique(data, excludeId = null) {
+    if (data.code) {
       await checkDuplicate(
         this.model,
-        { sku: data.sku },
-        productId,
-        "SKU already exists"
+        { code: data.code.toUpperCase() },
+        excludeId,
+        "Product code already exists"
       );
     }
 
-    // Validate category
-    if (data.category) {
-      const category = await Category.findById(data.category);
-      if (!category) {
-        throw new Error("Category not found");
-      }
-
-      if (!category.status) {
-        throw new Error("Category is inactive");
-      }
-
-      // Check if category is a leaf node
-      const hasChildren = await Category.findOne({
-        parentCategory: data.category,
-      });
-      if (hasChildren) {
-        throw new Error("Products can only be assigned to leaf categories");
-      }
+    if (data.sku) {
+      await checkDuplicate(
+        this.model,
+        { sku: data.sku.toUpperCase() },
+        excludeId,
+        "SKU already exists"
+      );
     }
-
-    // Price validation
-    if (data.price !== undefined && data.price < 0) {
-      throw new Error("Price cannot be negative");
-    }
-
-    // Quantity validation
-    if (data.quantity !== undefined && data.quantity < 0) {
-      throw new Error("Quantity cannot be negative");
-    }
-
-    return normalizeData(data, this.nullableFields);
   }
 
-  async create(data, user) {
-    try {
-      const normalizedData = await this.validateProduct(data);
+  async validateRelatedEntities(data) {
+    const validations = [];
 
-      // Generate codes
+    // Validate category
+    if (data.category) {
+      validations.push(
+        Category.findOne({
+          _id: data.category,
+          status: 1,
+          isLeaf: true,
+        }).then((category) => {
+          if (!category) {
+            throw new Error("Category not found or not a leaf category");
+          }
+          return category;
+        })
+      );
+    }
+
+    // Validate manufacturer
+    if (data.manufacturer) {
+      validations.push(
+        Manufacturer.findOne({
+          _id: data.manufacturer,
+          status: 1,
+        }).then((manufacturer) => {
+          if (!manufacturer) {
+            throw new Error("Manufacturer not found or inactive");
+          }
+          return manufacturer;
+        })
+      );
+    }
+
+    // Validate supplier
+    if (data.supplier) {
+      validations.push(
+        Supplier.findOne({
+          _id: data.supplier,
+          status: 1,
+        }).then((supplier) => {
+          if (!supplier) {
+            throw new Error("Supplier not found or inactive");
+          }
+          return supplier;
+        })
+      );
+    }
+
+    await Promise.all(validations);
+  }
+
+  async validateStatusChange(document, newStatus) {
+    const baseValidation = await super.validateStatusChange(
+      document,
+      newStatus
+    );
+    if (!baseValidation.isValid) {
+      return baseValidation;
+    }
+
+    // Cannot activate discontinued product
+    if (newStatus === 1 && document.isDiscontinued) {
+      return {
+        isValid: false,
+        message: "Cannot activate discontinued product",
+      };
+    }
+
+    return { isValid: true };
+  }
+
+  async validatePrices(data) {
+    if (
+      data.importPrice &&
+      data.sellingPrice &&
+      data.importPrice > data.sellingPrice
+    ) {
+      throw new Error(
+        "Selling price must be greater than or equal to import price"
+      );
+    }
+  }
+
+  async create(data, user = null, options = {}) {
+    const session = await this.startTransaction(options);
+
+    try {
+      await this.validateUnique(data);
+      await this.validateRelatedEntities(data);
+      await this.validatePrices(data);
+
+      // Generate barcode and QR code
       const [barcode, qrCode] = await Promise.all([
         generateBarcode(data.sku),
-        generateQRCode.toDataURL(
+        QRCode.toDataURL(
           JSON.stringify({
             sku: data.sku,
             name: data.name,
-            price: data.price,
-            category: data.category,
+            price: data.sellingPrice,
           })
         ),
       ]);
 
-      // Build category path
-      const categoryPath = await this.buildCategoryPath(data.category);
-
       const productData = {
-        ...normalizedData,
+        ...data,
         barcode,
         qrCode,
-        categoryPath,
-        createdBy: user._id,
-        status: data.status !== undefined ? parseInt(data.status) : 1,
-        finalPrice: data.price, // Initial price without discount
-        updateHistory: [createHistoryRecord(user, normalizedData, "create")],
+        currentPrice: data.sellingPrice, // Initially set to selling price
       };
 
-      const product = await this.model.create(productData);
-
-      productLog.success("Created product", {
-        productId: product._id,
-        userId: user._id,
-        sku: product.sku,
+      const result = await super.create(productData, user, {
+        ...options,
+        session,
       });
 
-      return product;
+      await this.endTransaction(session, true);
+      return result;
     } catch (error) {
-      productLog.error("Failed to create product", error);
+      await this.endTransaction(session, false);
       throw error;
     }
   }
 
-  async update(id, data, user) {
+  async update(id, data, user = null, options = {}) {
+    const session = await this.startTransaction(options);
+
     try {
-      const product = await this.getProductById(id, user);
-      const normalizedData = await this.validateProduct(data, id);
+      await this.validateUnique(data, id);
+      await this.validateRelatedEntities(data);
 
       // Handle category change
-      if (data.category && data.category !== product.category.toString()) {
-        normalizedData.categoryPath = await this.buildCategoryPath(
-          data.category
-        );
+      if (data.category) {
+        const category = await Category.findById(data.category);
+        data.categoryPath = [...category.path, category._id];
       }
 
-      // Create history record
-      const historyRecord = createHistoryRecord(user, normalizedData, "update");
-      const updateHistory = mergeHistory(product.updateHistory, historyRecord);
+      const result = await super.update(id, data, user, {
+        ...options,
+        session,
+      });
+
+      await this.endTransaction(session, true);
+      return result;
+    } catch (error) {
+      await this.endTransaction(session, false);
+      throw error;
+    }
+  }
+  /**
+   * Apply discount to product
+   */
+  async applyDiscountCode(id, code, user) {
+    const session = await this.startTransaction();
+
+    try {
+      const product = await this.getFullDocument(id);
+      await product.applyDiscountCode(code);
+
+      // Add to history
+      product.updateHistory.push({
+        action: "apply_discount",
+        updatedBy: user._id,
+        timestamp: new Date(),
+        changes: {
+          discount: product.discount,
+          oldPrice: product.sellingPrice,
+          newPrice: product.currentPrice,
+        },
+      });
+
+      await product.save({ session });
+
+      await this.endTransaction(session, true);
+      return this.processResponse(product);
+    } catch (error) {
+      await this.endTransaction(session, false);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove discount from product
+   */
+  async removeDiscount(id, user) {
+    const session = await this.startTransaction();
+
+    try {
+      const product = await this.getFullDocument(id);
+
+      if (!product.discount) {
+        throw new Error("Product has no active discount");
+      }
+
+      const oldDiscount = { ...product.discount };
+      product.discount = null;
+      product.currentPrice = product.sellingPrice;
+
+      product.updateHistory.push({
+        action: "remove_discount",
+        updatedBy: user._id,
+        timestamp: new Date(),
+        changes: {
+          removedDiscount: oldDiscount,
+          newPrice: product.currentPrice,
+        },
+      });
+
+      await product.save({ session });
+
+      await this.endTransaction(session, true);
+      return this.processResponse(product);
+    } catch (error) {
+      await this.endTransaction(session, false);
+      throw error;
+    }
+  }
+
+  async discontinue(id, data, user) {
+    const session = await this.startTransaction();
+
+    try {
+      const product = await this.getFullDocument(id);
 
       // Update product
-      const updatedProduct = await this.model.findByIdAndUpdate(
-        id,
-        {
-          ...normalizedData,
-          finalPrice: this.calculateFinalPrice(
-            data.price || product.price,
-            product.discount
-          ),
-          updateHistory,
-        },
-        { new: true }
-      );
-
-      productLog.success("Updated product", {
-        productId: id,
-        userId: user._id,
-        changes: normalizedData,
-      });
-
-      return updatedProduct;
-    } catch (error) {
-      productLog.error("Failed to update product", error);
-      throw error;
-    }
-  }
-
-  async updateStatus(id, status, user) {
-    try {
-      const product = await this.getProductById(id, user);
-
-      const validation = validateGeneralStatusChange(product, status);
-      if (!validation.isValid) {
-        throw new Error(validation.message);
-      }
-
-      const historyRecord = createHistoryRecord(
-        user,
-        { status },
-        "status_update"
-      );
-      const updateHistory = mergeHistory(product.updateHistory, historyRecord);
-
-      const updatedProduct = await this.model.findByIdAndUpdate(
-        id,
-        { status, updateHistory },
-        { new: true }
-      );
-
-      productLog.success("Updated product status", {
-        productId: id,
-        userId: user._id,
-        oldStatus: product.status,
-        newStatus: status,
-      });
-
-      return updatedProduct;
-    } catch (error) {
-      productLog.error("Failed to update product status", error);
-      throw error;
-    }
-  }
-
-  async updateQuantity(id, quantity, user) {
-    try {
-      const product = await this.model.findById(id);
-      if (!product) {
-        throw new Error("Product not found");
-      }
-
-      product.quantity = quantity;
-      await product.save();
-
-      // Kiểm tra cảnh báo tồn kho
-      const stockAlertService = req.app.get("stockAlertService");
-      await stockAlertService.checkAndNotify(product);
-
-      return product;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  async getProductById(id, user) {
-    const product = await this.model.findById(id);
-    if (!product) {
-      throw new Error("Product not found");
-    }
-    return product;
-  }
-
-  async updateDiscount(id, discountData, user) {
-    try {
-      const product = await this.getProductById(id, user);
-
-      // Validate discount data
-      if (discountData.percentage < 0 || discountData.percentage > 100) {
-        throw new Error("Discount percentage must be between 0 and 100");
-      }
-
-      const now = new Date();
-      if (discountData.startDate && new Date(discountData.startDate) < now) {
-        throw new Error("Start date cannot be in the past");
-      }
-
-      if (discountData.endDate && new Date(discountData.endDate) < now) {
-        throw new Error("End date cannot be in the past");
-      }
-
-      // Calculate new price with discount
-      const discount = {
-        percentage: discountData.percentage,
-        startDate: discountData.startDate || now,
-        endDate: discountData.endDate,
-        isActive:
-          discountData.isActive !== undefined ? discountData.isActive : true,
-      };
-
-      const finalPrice = this.calculateFinalPrice(product.price, discount);
+      product.isDiscontinued = true;
+      product.discontinuedAt = data.effectiveDate || new Date();
+      product.discontinuedBy = user._id;
+      product.status = 0;
 
       // Create history record
-      const historyRecord = createHistoryRecord(user, {
-        discount,
-        finalPrice,
-        action: "update_discount",
-      });
-      const updateHistory = mergeHistory(product.updateHistory, historyRecord);
-
-      const updatedProduct = await this.model.findByIdAndUpdate(
-        id,
-        {
-          discount,
-          finalPrice,
-          updateHistory,
+      const historyRecord = {
+        action: "discontinue",
+        updatedBy: user._id,
+        timestamp: new Date(),
+        changes: {
+          reason: data.reason,
+          effectiveDate: product.discontinuedAt,
         },
-        { new: true }
-      );
+      };
 
-      productLog.success("Updated product discount", {
-        productId: id,
-        userId: user._id,
-        discount: discountData,
-      });
+      product.updateHistory.push(historyRecord);
+      await product.save({ session });
 
-      return updatedProduct;
+      await this.endTransaction(session, true);
+
+      return this.processResponse(product);
     } catch (error) {
-      productLog.error("Failed to update product discount", error);
+      await this.endTransaction(session, false);
       throw error;
     }
   }
 
-  async removeDiscount(id, user) {
-    try {
-      const product = await this.getProductById(id, user);
+  async adjustQuantity(id, data, user) {
+    const session = await this.startTransaction();
 
-      if (!product.discount?.isActive) {
-        throw new Error("Product does not have an active discount");
+    try {
+      const product = await this.getFullDocument(id);
+      const oldQuantity = product.quantity;
+      const adjustment = parseInt(data.adjustment);
+
+      // Calculate new quantity
+      const newQuantity = oldQuantity + adjustment;
+      if (newQuantity < 0) {
+        throw new Error("Adjustment would result in negative quantity");
       }
+
+      // Update quantity
+      product.quantity = newQuantity;
+      product.isOutOfStock = newQuantity <= 0;
 
       // Create history record
-      const historyRecord = createHistoryRecord(user, {
-        discount: null,
-        finalPrice: product.price,
-        action: "remove_discount",
-      });
-      const updateHistory = mergeHistory(product.updateHistory, historyRecord);
-
-      await this.model.findByIdAndUpdate(id, {
-        discount: {
-          percentage: 0,
-          isActive: false,
+      const historyRecord = {
+        action: "quantity_adjustment",
+        updatedBy: user._id,
+        timestamp: new Date(),
+        changes: {
+          oldQuantity,
+          adjustment,
+          newQuantity,
+          reason: data.reason,
+          notes: data.notes,
         },
-        finalPrice: product.price,
-        updateHistory,
-      });
-
-      productLog.success("Removed product discount", {
-        productId: id,
-        userId: user._id,
-      });
-
-      return {
-        message: "Discount removed successfully",
-        productId: id,
-        previousPrice: product.finalPrice,
-        newPrice: product.price,
       };
+
+      product.updateHistory.push(historyRecord);
+      await product.save({ session });
+
+      await this.endTransaction(session, true);
+
+      return this.processResponse(product);
     } catch (error) {
-      productLog.error("Failed to remove product discount", error);
+      await this.endTransaction(session, false);
       throw error;
     }
   }
 
-  async delete(id, user) {
+  // Location related methods
+  async getLocationSummary(id) {
     try {
-      const product = await this.getProductById(id, user);
-
-      // Check if product can be deleted
-      // Add any business rules here (e.g., check if product is in any orders)
-
-      await product.deleteOne();
-
-      productLog.success("Deleted product", {
-        productId: id,
-        userId: user._id,
-        productName: product.name,
-      });
-
-      return { message: "Product deleted successfully" };
+      return await this.locationService.getProductLocationsSummary(id);
     } catch (error) {
-      productLog.error("Failed to delete product", error);
-      throw error;
-    }
-  }
-
-  // Helper methods
-  async buildCategoryPath(categoryId) {
-    const categoryPath = [];
-    let currentCat = await Category.findById(categoryId);
-
-    while (currentCat) {
-      categoryPath.unshift(currentCat._id);
-      if (!currentCat.parentCategory) break;
-      currentCat = await Category.findById(currentCat.parentCategory);
-    }
-
-    return categoryPath;
-  }
-
-  calculateFinalPrice(basePrice, discount) {
-    if (!discount || !discount.isActive) {
-      return basePrice;
-    }
-
-    const now = new Date();
-    if (
-      (!discount.startDate || now >= discount.startDate) &&
-      (!discount.endDate || now <= discount.endDate)
-    ) {
-      return basePrice * (1 - discount.percentage / 100);
-    }
-
-    return basePrice;
-  }
-  // Helper method for bulk price updates
-  async updatePricesByCategory(categoryId, adjustment, adjustmentType, user) {
-    try {
-      // Kiểm tra category có tồn tại và active
-      const category = await Category.findById(categoryId);
-      if (!category) {
-        throw new Error("Category not found");
-      }
-      if (category.status !== 1) {
-        throw new Error("Category is inactive");
-      }
-
-      // Tìm tất cả sản phẩm thuộc category
-      const products = await this.model.find({
-        category: categoryId,
-        status: 1, // Chỉ cập nhật sản phẩm đang active
-      });
-
-      if (products.length === 0) {
-        throw new Error("No active products found in this category");
-      }
-
-      const updates = [];
-      const priceUpdates = []; // Lưu thông tin thay đổi giá cho log
-
-      for (const product of products) {
-        let newPrice;
-        if (adjustmentType === "percentage") {
-          newPrice = product.price * (1 + adjustment / 100);
-        } else {
-          newPrice = product.price + adjustment;
-        }
-
-        // Kiểm tra giá mới hợp lệ
-        if (newPrice < 0) {
-          priceUpdates.push({
-            productId: product._id,
-            oldPrice: product.price,
-            status: "skipped",
-            reason: "Resulting price would be negative",
-          });
-          continue;
-        }
-
-        // Tạo history record với thông tin chi tiết về điều chỉnh giá
-        const historyRecord = createHistoryRecord(
-          user,
-          {
-            priceChange: {
-              oldPrice: product.price,
-              newPrice: newPrice,
-              adjustment: adjustment,
-              adjustmentType: adjustmentType,
-              categoryId: categoryId,
-            },
-          },
-          "bulk_price_update"
-        );
-
-        const updateHistory = mergeHistory(
-          product.updateHistory,
-          historyRecord
-        );
-
-        // Cập nhật sản phẩm
-        const updatePromise = this.model.findByIdAndUpdate(
-          product._id,
-          {
-            price: newPrice,
-            finalPrice: this.calculateFinalPrice(newPrice, product.discount),
-            updateHistory,
-          },
-          { new: true }
-        );
-
-        updates.push(updatePromise);
-
-        priceUpdates.push({
-          productId: product._id,
-          productName: product.name,
-          oldPrice: product.price,
-          newPrice: newPrice,
-          status: "updated",
-        });
-      }
-
-      // Thực hiện cập nhật
-      await Promise.all(updates);
-
-      // Log kết quả
-      productLog.success("Bulk updated prices by category", {
-        categoryId,
-        categoryName: category.name,
-        adjustment,
-        adjustmentType,
-        userId: user._id,
-        affectedProducts: priceUpdates.length,
-        priceUpdates, // Chi tiết các thay đổi
-      });
-
-      return {
-        message: `Updated prices for ${updates.length} products`,
-        categoryId,
-        categoryName: category.name,
-        adjustment,
-        adjustmentType,
-        details: priceUpdates,
-      };
-    } catch (error) {
-      productLog.error("Failed to bulk update prices", error, {
-        categoryId,
-        adjustment,
-        adjustmentType,
-        userId: user._id,
-      });
+      this.logger.error("Failed to get location summary", error);
       throw error;
     }
   }

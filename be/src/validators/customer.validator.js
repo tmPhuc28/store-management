@@ -1,5 +1,5 @@
 // src/validators/customer.validator.js
-const { body } = require("express-validator");
+const { body, query } = require("express-validator");
 
 exports.createCustomerValidator = [
   body("name")
@@ -48,12 +48,6 @@ exports.createCustomerValidator = [
     .trim()
     .isLength({ max: 100 })
     .withMessage("Province name cannot exceed 100 characters"),
-
-  body("status")
-    .optional()
-    .isIn([0, 1])
-    .withMessage("Status must be either 0 (inactive) or 1 (active)")
-    .toInt(),
 
   body("notes")
     .optional()
@@ -110,15 +104,46 @@ exports.updateCustomerValidator = [
     .isLength({ max: 100 })
     .withMessage("Province name cannot exceed 100 characters"),
 
-  body("status")
-    .optional()
-    .isIn([0, 1])
-    .withMessage("Status must be either 0 (inactive) or 1 (active)")
-    .toInt(),
-
   body("notes")
     .optional()
     .trim()
     .isLength({ max: 500 })
     .withMessage("Notes cannot exceed 500 characters"),
+];
+
+exports.customerHistoryValidator = [
+  query("startDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Invalid start date format"),
+
+  query("endDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Invalid end date format")
+    .custom((endDate, { req }) => {
+      if (req.query.startDate && endDate < req.query.startDate) {
+        throw new Error("End date must be after start date");
+      }
+      return true;
+    }),
+
+  query("minAmount")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Minimum amount must be a positive number"),
+
+  query("maxAmount")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Maximum amount must be a positive number")
+    .custom((maxAmount, { req }) => {
+      if (
+        req.query.minAmount &&
+        parseFloat(maxAmount) < parseFloat(req.query.minAmount)
+      ) {
+        throw new Error("Maximum amount must be greater than minimum amount");
+      }
+      return true;
+    }),
 ];

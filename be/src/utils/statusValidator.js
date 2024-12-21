@@ -52,7 +52,7 @@ const validateUserStatusChange = (currentUser, newStatus, requestUser) => {
  * @param {Number} newStatus - Status mới
  * @returns {Object} - { isValid: boolean, message: string }
  */
-const validateGeneralStatusChange = (currentObject, newStatus) => {
+const validateStatusChange = (currentObject, newStatus) => {
   // Kiểm tra giá trị status có hợp lệ
   if (![0, 1].includes(newStatus)) {
     return {
@@ -77,5 +77,5 @@ const validateGeneralStatusChange = (currentObject, newStatus) => {
 
 module.exports = {
   validateUserStatusChange,
-  validateGeneralStatusChange,
+  validateStatusChange,
 };

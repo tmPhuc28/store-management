@@ -3,25 +3,6 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
-const addressSchema = new mongoose.Schema({
-  detail: {
-    type: String,
-    trim: true,
-  },
-  ward: {
-    type: String,
-    trim: true,
-  },
-  district: {
-    type: String,
-    trim: true,
-  },
-  province: {
-    type: String,
-    trim: true,
-  },
-});
-
 const userSchema = new mongoose.Schema(
   {
     username: {
@@ -41,8 +22,9 @@ const userSchema = new mongoose.Schema(
       required: [true, "Email is required"],
       unique: true,
       lowercase: true,
+      trim: true,
       match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
         "Please add a valid email",
       ],
     },
@@ -52,42 +34,20 @@ const userSchema = new mongoose.Schema(
       minlength: [6, "Password must be at least 6 characters long"],
       select: false,
     },
-    firstName: {
-      type: String,
-      required: [true, "First name is required"],
-      trim: true,
-      maxlength: [50, "First name cannot exceed 50 characters"],
-    },
-    lastName: {
-      type: String,
-      required: [true, "Last name is required"],
-      trim: true,
-      maxlength: [50, "Last name cannot exceed 50 characters"],
-    },
-    dateOfBirth: {
-      type: Date,
-    },
-    gender: {
-      type: String,
-      enum: ["male", "female", "other"],
-    },
-    phone: {
-      type: String,
-      unique: true,
-      sparse: true,
-      match: [/^[0-9+\-\s()]*$/, "Please enter a valid phone number"],
-    },
-    address: addressSchema,
     role: {
-      type: String,
-      enum: ["admin", "user"],
-      default: "user",
+      type: Number,
+      enum: [0, 1], // 0: user, 1: admin
+      default: 0,
     },
     status: {
       type: Number,
-      enum: [0, 1],
+      enum: [0, 1], // 0: inactive, 1: active
       default: 1,
-      required: true,
+    },
+    employee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
     },
     refreshTokens: [
       {
@@ -102,31 +62,21 @@ const userSchema = new mongoose.Schema(
         },
       },
     ],
-    resetPasswordToken: String,
-    resetPasswordExpire: Date,
-    activityLog: [
-      {
-        action: String,
-        timestamp: {
-          type: Date,
-          default: Date.now,
-        },
-        details: Object,
-        ipAddress: String,
-        userAgent: String,
-      },
-    ],
     lastLogin: {
       timestamp: Date,
       ipAddress: String,
       userAgent: String,
     },
+    passwordChangedAt: Date,
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
     updateHistory: [
       {
         action: String,
         updatedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
+          default: null,
         },
         timestamp: {
           type: Date,
@@ -143,40 +93,60 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for full name
-userSchema.virtual("fullName").get(function () {
-  return `${this.firstName} ${this.lastName}`;
+// Virtual
+userSchema.virtual("roleText").get(function () {
+  return this.role === 1 ? "admin" : "user";
 });
 
-// Virtual for status text
 userSchema.virtual("statusText").get(function () {
   return this.status === 1 ? "active" : "inactive";
 });
 
-// Virtual for age
-userSchema.virtual("age").get(function () {
-  if (!this.dateOfBirth) return null;
-  const today = new Date();
-  const birthDate = new Date(this.dateOfBirth);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-  return age;
-});
-
-// Encrypt password using bcrypt
+// Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
-    next();
+    return next();
   }
+
   const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_SALT));
   this.password = await bcrypt.hash(this.password, salt);
+
+  if (this.isModified("password") && !this.isNew) {
+    this.passwordChangedAt = Date.now();
+  }
+
+  next();
 });
 
-// Sign JWT and return
-userSchema.methods.getSignedJwtToken = function () {
+// Sync status with employee
+userSchema.pre("save", async function (next) {
+  if (this.isModified("status") && this.employee) {
+    await mongoose
+      .model("Employee")
+      .findByIdAndUpdate(this.employee, { status: this.status });
+  }
+  next();
+});
+
+// Match password
+userSchema.methods.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+// Check if password was changed after token was issued
+userSchema.methods.hasPasswordChangedAfterToken = function (tokenTimestamp) {
+  if (this.passwordChangedAt) {
+    const changedTimestamp = parseInt(
+      this.passwordChangedAt.getTime() / 1000,
+      10
+    );
+    return tokenTimestamp < changedTimestamp;
+  }
+  return false;
+};
+
+// Generate JWT token
+userSchema.methods.generateAuthToken = function () {
   return jwt.sign({ id: this._id, role: this.role }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE,
   });
@@ -190,21 +160,8 @@ userSchema.methods.generateRefreshToken = function () {
     { expiresIn: process.env.JWT_REFRESH_EXPIRE }
   );
 
-  // Add to refresh tokens array
   this.refreshTokens.push({ token: refreshToken });
-
   return refreshToken;
-};
-
-// Match password
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
-};
-
-// Add refresh token
-userSchema.methods.addRefreshToken = async function (token) {
-  this.refreshTokens.push({ token });
-  await this.save();
 };
 
 // Remove refresh token
@@ -219,35 +176,21 @@ userSchema.methods.removeAllRefreshTokens = async function () {
   await this.save();
 };
 
-// Log activity
-userSchema.methods.logActivity = async function (
-  action,
-  details,
-  reqInfo = {}
-) {
-  this.activityLog.push({
-    action,
-    details,
-    ipAddress: reqInfo.ip,
-    userAgent: reqInfo.userAgent,
-  });
-  await this.save();
-};
-
 // Update last login
-userSchema.methods.updateLastLogin = async function (reqInfo = {}) {
+userSchema.methods.updateLastLogin = async function (ipAddress, userAgent) {
   this.lastLogin = {
     timestamp: new Date(),
-    ipAddress: reqInfo.ip,
-    userAgent: reqInfo.userAgent,
+    ipAddress,
+    userAgent,
   };
   await this.save();
 };
 
 // Indexes
-userSchema.index({ username: 1, email: 1 });
+userSchema.index({ username: 1 });
+userSchema.index({ email: 1 });
 userSchema.index({ status: 1 });
-userSchema.index({ phone: 1 });
-userSchema.index({ "address.province": 1, "address.district": 1 });
+userSchema.index({ role: 1 });
+userSchema.index({ employee: 1 });
 
 module.exports = mongoose.model("User", userSchema);

@@ -1,0 +1,260 @@
+# src/swagger/payment.yaml
+openapi: '3.0.3'
+info:
+  title: Payment API
+  description: API documentation for payment management
+  version: 1.0.0
+tags:
+  - name: Payments
+    description: Payment management endpoints
+
+components:
+  schemas:
+    BankInfo:
+      type: object
+      required:
+        - bankId
+        - accountNumber
+        - accountName
+      properties:
+        bankId:
+          type: string
+          description: Bank identifier (code or BIN)
+          example: "MB"
+        bin:
+          type: string
+          description: Bank identification number
+          example: "970422"
+        shortName:
+          type: string
+          description: Bank short name
+          example: "MBBank"
+        accountNumber:
+          type: string
+          description: Bank account number
+          pattern: ^\d{8,19}$
+          example: "0987654321"
+        accountName:
+          type: string
+          description: Account holder name
+          example: "NGUYEN VAN A"
+        bankName:
+          type: string
+          description: Full bank name
+          example: "Military Commercial Joint Stock Bank"
+
+    Bank:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "970422"
+        code:
+          type: string
+          example: "MB"
+        name:
+          type: string
+          example: "Military Commercial Joint Stock Bank"
+        shortName:
+          type: string
+          example: "MBBank"
+        swiftCode:
+          type: string
+          example: "MSCBVNVX"
+        logo:
+          type: string
+          example: "https://api.vietqr.io/img/MB.png"
+        transferSupported:
+          type: boolean
+          example: true
+
+    QRRequest:
+      type: object
+      required:
+        - bankInfo
+      properties:
+        bankInfo:
+          $ref: '#/components/schemas/BankInfo'
+        amount:
+          type: number
+          description: Payment amount (if applicable)
+          example: 100000
+        description:
+          type: string
+          description: Payment description or reference
+          example: "Payment for order #123"
+        template:
+          type: string
+          enum: [compact, compact2]
+          default: compact2
+          description: QR code template format
+
+    QRResponse:
+      type: object
+      properties:
+        qrCode:
+          type: string
+          description: Generated VietQR URL
+          example: "https://img.vietqr.io/image/MB-0987654321-compact2.png?amount=100000"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: "Invalid bank information"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+paths:
+  /api/v2/payments/banks:
+    get:
+      summary: Get list of supported banks
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: onlySupported
+          schema:
+            type: boolean
+            default: true
+          description: Only return banks that support VietQR
+      responses:
+        200:
+          description: List of banks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Bank"
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v2/payments/banks/find:
+    get:
+      summary: Find bank by identifier
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: Bank BIN, code, or short name
+      responses:
+        200:
+          description: Bank found successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Bank"
+        404:
+          description: Bank not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v2/payments/qr:
+    post:
+      summary: Generate QR code for payment
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QRRequest"
+      responses:
+        200:
+          description: QR code generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/QRResponse"
+        400:
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v2/payments/qr/validate:
+    post:
+      summary: Validate QR URL
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  example: "https://img.vietqr.io/image/MB-0987654321-compact2.png"
+      responses:
+        200:
+          description: QR validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      isValid:
+                        type: boolean
+                        example: true
+        400:
+          description: Invalid URL format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

@@ -1,0 +1,497 @@
+# src/swagger/employee.yaml
+openapi: 3.0.0
+info:
+  title: Employee Management API
+  version: 1.0.0
+  description: API documentation for Employee Management
+tags:
+  - name: Employees
+    description: Employee management endpoints
+
+components:
+  schemas:
+    Address:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "123 Main Street"
+        ward:
+          type: string
+          example: "Ward 1"
+        district:
+          type: string
+          example: "District 1"
+        province:
+          type: string
+          example: "Ho Chi Minh City"
+
+    Employee:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - phone
+      properties:
+        firstName:
+          type: string
+          maxLength: 50
+          example: "John"
+        lastName:
+          type: string
+          maxLength: 50
+          example: "Doe"
+        phone:
+          type: string
+          pattern: ^[0-9+\-\s()]*$
+          example: "0123456789"
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+        dateOfBirth:
+          type: string
+          format: date
+          example: "1990-01-01"
+        gender:
+          type: string
+          enum: [male, female, other]
+          example: "male"
+        position:
+          type: string
+          maxLength: 100
+          example: "Sales Manager"
+        address:
+          $ref: '#/components/schemas/Address'
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        fullName:
+          type: string
+          readOnly: true
+          example: "John Doe"
+        age:
+          type: integer
+          readOnly: true
+          example: 33
+        statusText:
+          type: string
+          readOnly: true
+          enum: ["active", "inactive"]
+          example: "active"
+
+    UpdateHistory:
+      type: object
+      properties:
+        _id:
+          type: string
+        action:
+          type: string
+          enum: [create, update, status_update, history_delete, history_clear]
+        updatedBy:
+          type: object
+          properties:
+            _id:
+              type: string
+            username:
+              type: string
+            email:
+              type: string
+        timestamp:
+          type: string
+          format: date-time
+        changes:
+          type: object
+          description: Object containing changed fields or metadata about history operation
+
+paths:
+  /api/v1/employees:
+    get:
+      summary: Get all employees
+      description: Retrieve a list of employees with pagination and filters
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Results per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in firstName, lastName, phone, or email
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: Filter by status
+        - in: query
+          name: position
+          schema:
+            type: string
+          description: Filter by position
+        - in: query
+          name: gender
+          schema:
+            type: string
+            enum: [male, female, other]
+          description: Filter by gender
+        - in: query
+          name: dateFrom
+          schema:
+            type: string
+            format: date
+          description: Filter by date of birth from
+        - in: query
+          name: dateTo
+          schema:
+            type: string
+            format: date
+          description: Filter by date of birth to
+        # Update sort description
+        - in: query
+          name: sort
+          schema:
+            type: string
+          description: "Sort field (e.g., firstName, -lastName, createdAt)"
+          example: "-createdAt"
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Employee'
+                  total:
+                    type: integer
+                    description: Total number of records
+                    example: 50
+                  page:
+                    type: integer
+                    description: Current page number
+                    example: 1
+                  limit:
+                    type: integer
+                    description: Records per page
+                    example: 10
+                  pages:
+                    type: integer
+                    description: Total number of pages
+                    example: 5
+        400:
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid date format"
+        401:
+          description: Not authenticated
+        403:
+          description: Not authorized
+
+    post:
+      summary: Create new employee (Admin only)
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+      responses:
+        201:
+          description: Employee created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        400:
+          description: Validation error or duplicate fields
+        403:
+          description: Not authorized (Admin only)
+
+  /api/v1/employees/{id}:
+    get:
+      summary: Get employee by ID
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        404:
+          description: Employee not found
+
+    put:
+      summary: Update employee (Admin only)
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+      responses:
+        200:
+          description: Employee updated successfully
+        400:
+          description: Validation error
+        403:
+          description: Not authorized (Admin only)
+        404:
+          description: Employee not found
+
+    delete:
+      summary: Delete employee (Admin only)
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Employee deleted successfully
+        403:
+          description: Not authorized (Admin only)
+        404:
+          description: Employee not found
+
+  /api/v1/employees/{id}/status:
+    patch:
+      summary: Update employee status (Admin only)
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status value
+        403:
+          description: Not authorized (Admin only)
+        404:
+          description: Employee not found
+  
+  /api/v1/employees/{id}/history/{historyId}:
+    delete:
+      summary: Delete specific history entry
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Employee ID
+        - in: path
+          name: historyId
+          required: true
+          schema:
+            type: string
+          description: History entry ID
+      responses:
+        200:
+          description: History entry deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    description: Updated history array after deletion
+                    items:
+                      $ref: '#/components/schemas/UpdateHistory'
+        404:
+          description: Employee or history entry not found
+        403:
+          description: Not authorized to delete history
+        401:
+          description: Not authenticated
+          
+  /api/v1/employees/{id}/history:
+    get:
+      summary: Get employee update history
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Employee ID
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [timestamp, -timestamp]
+            default: -timestamp
+          description: Sort by timestamp (prefix with - for DESC)
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UpdateHistory'
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+        404:
+          description: Employee not found
+        401:
+          description: Not authenticated
+    
+    delete:
+      summary: Clear all history for an employee
+      tags: [Employees]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Employee ID
+      responses:
+        200:
+          description: History cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    description: New history array with clear record
+                    items:
+                      $ref: '#/components/schemas/UpdateHistory'
+        404:
+          description: Employee not found
+        403:
+          description: Not authorized to clear history
+        401:
+          description: Not authenticated
+
+    

@@ -1,235 +1,263 @@
 // src/controllers/auth.controller.js
-const { validationResult } = require("express-validator");
-const authService = require("../services/auth.service");
+const BaseController = require("./base/base.controller");
+const AuthService = require("../services/auth.service");
+const ResponseHandler = require("../utils/responseHandler");
+class AuthController extends BaseController {
+  constructor() {
+    super(AuthService);
+  }
 
-// Helper function to send token response
-const sendTokenResponse = (res, statusCode, tokens, user) => {
-  const { accessToken, refreshToken, cookieOptions } = tokens;
+  /**
+   * Set authentication cookies
+   */
+  setAuthCookies(res, accessToken, refreshToken = null) {
+    // Basic cookie options
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    };
 
-  // Set cookies
-  res.cookie("accessToken", accessToken, cookieOptions);
-  if (refreshToken) {
-    res.cookie("refreshToken", refreshToken, {
+    // Set access token cookie with expiry in minutes
+    res.cookie("accessToken", accessToken, {
       ...cookieOptions,
-      expires: new Date(
-        Date.now() + process.env.REFRESH_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
-      ),
+      maxAge: Number(process.env.JWT_COOKIE_EXPIRE) * 60 * 1000, // Convert minutes to milliseconds
     });
-  }
 
-  // Send response
-  res.status(statusCode).json({
-    success: true,
-    data: {
-      user: {
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        status: user.statusText,
-      },
-      tokens: {
-        accessToken,
-        refreshToken,
-      },
-    },
-  });
-};
-
-exports.register = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    };
-
-    const user = await authService.register(req.body, reqInfo);
-    res.status(201).json({
-      success: true,
-      message: "Registration successful. Please login to continue.",
-      data: {
-        user: {
-          _id: user._id,
-          username: user.username,
-          email: user.email,
-          fullName: user.fullName,
-          role: user.role,
-          status: user.statusText,
-        },
-      },
-    });
-  } catch (error) {
-    if (error.message.includes("already registered")) {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
+    // Set refresh token cookie if provided
+    if (refreshToken) {
+      res.cookie("refreshToken", refreshToken, {
+        ...cookieOptions,
+        maxAge: Number(process.env.JWT_REFRESH_COOKIE_EXPIRE) * 60 * 1000,
       });
     }
-    next(error);
   }
-};
 
-exports.login = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
+  /**
+   * Clear authentication cookies
+   */
+  clearAuthCookies(res) {
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
     };
 
-    const { user, accessToken, refreshToken } = await authService.login(
-      req.body,
-      reqInfo
-    );
-
-    sendTokenResponse(res, 200, { accessToken, refreshToken }, user);
-  } catch (error) {
-    if (
-      error.message === "Invalid credentials" ||
-      error.message.includes("inactive")
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: error.message,
-      });
-    }
-    next(error);
-  }
-};
-
-exports.refresh = async (req, res, next) => {
-  try {
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
-
-    if (!refreshToken) {
-      return res.status(401).json({
-        success: false,
-        message: "Please provide refresh token",
-      });
-    }
-
-    const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    };
-
-    const tokens = await authService.refreshToken(refreshToken, reqInfo);
-
-    res.status(200).json({
-      success: true,
-      data: tokens,
+    res.cookie("accessToken", "none", {
+      ...cookieOptions,
+      expires: new Date(Date.now() + 10 * 1000),
     });
-  } catch (error) {
-    if (error.message === "Invalid refresh token") {
-      return res.status(401).json({
-        success: false,
-        message: error.message,
-      });
+
+    res.cookie("refreshToken", "none", {
+      ...cookieOptions,
+      expires: new Date(Date.now() + 10 * 1000),
+    });
+  }
+
+  /**
+   * @desc    Register new user
+   * @route   POST /api/v1/auth/register
+   */
+  register = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const clientInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+
+      const user = await this.service.register(req.body, clientInfo);
+
+      // Mask sensitive data
+      user.password = undefined;
+      user.refreshTokens = undefined;
+
+      const response = ResponseHandler.success(
+        { user },
+        "Registration successful",
+        201
+      );
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
-    next(error);
-  }
-};
+  };
 
-exports.logout = async (req, res, next) => {
-  try {
-    const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    };
+  /**
+   * @desc    Login user
+   * @route   POST /api/v1/auth/login
+   */
+  login = async (req, res) => {
+    try {
+      this.validateRequest(req);
 
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
-    await authService.logout(req.user, refreshToken, reqInfo);
+      const clientInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
 
-    res.clearCookie("accessToken");
-    res.clearCookie("refreshToken");
+      const { user, accessToken, refreshToken } = await this.service.login(
+        req.body,
+        clientInfo
+      );
 
-    res.status(200).json({
-      success: true,
-      message: "Logged out successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+      // Set auth cookies
+      this.setAuthCookies(res, accessToken, refreshToken);
 
-exports.logoutAll = async (req, res, next) => {
-  try {
-    const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    };
+      // Remove sensitive data
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      delete userResponse.refreshTokens;
 
-    await authService.logoutAll(req.user, reqInfo);
-
-    res.clearCookie("accessToken");
-    res.clearCookie("refreshToken");
-
-    res.status(200).json({
-      success: true,
-      message: "Logged out from all devices successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-exports.getMe = async (req, res, next) => {
-  try {
-    const user = await authService.findUserAndCheckStatus(req.user._id);
-    res.status(200).json({
-      success: true,
-      data: user,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-exports.changePassword = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    };
-
-    const { accessToken, refreshToken } = await authService.changePassword(
-      req.user,
-      req.body.currentPassword,
-      req.body.newPassword,
-      reqInfo
-    );
-
-    res.status(200).json({
-      success: true,
-      data: {
+      const response = ResponseHandler.success({
+        user: userResponse,
         tokens: {
           accessToken,
           refreshToken,
         },
-      },
-    });
-  } catch (error) {
-    if (error.message === "Current password is incorrect") {
-      return res.status(401).json({
-        success: false,
-        message: error.message,
       });
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
-    next(error);
-  }
-};
+  };
+
+  /**
+   * @desc    Refresh access token
+   * @route   POST /api/v1/auth/refresh-token
+   */
+  refreshToken = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+      if (!refreshToken) {
+        throw new Error("Refresh token is required");
+      }
+
+      const clientInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+
+      const tokens = await this.service.refreshToken(refreshToken, clientInfo);
+
+      // Set new cookies
+      this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+
+      const response = ResponseHandler.success({ tokens });
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * @desc    Logout user
+   * @route   POST /api/v1/auth/logout
+   */
+  logout = async (req, res) => {
+    try {
+      const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+      const clientInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+
+      await this.service.logout(req.user, refreshToken, clientInfo);
+
+      // Clear cookies
+      this.clearAuthCookies(res);
+
+      const response = ResponseHandler.success(null, "Logged out successfully");
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * @desc    Logout from all devices
+   * @route   POST /api/v1/auth/logout-all
+   */
+  logoutAll = async (req, res) => {
+    try {
+      const clientInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+
+      await this.service.logoutAll(req.user, clientInfo);
+
+      // Clear cookies
+      this.clearAuthCookies(res);
+
+      const response = ResponseHandler.success(
+        null,
+        "Logged out from all devices successfully"
+      );
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * @desc    Get current user profile
+   * @route   GET /api/v1/auth/me
+   */
+  getMe = async (req, res) => {
+    try {
+      const user = req.user;
+      user.password = undefined;
+      user.refreshTokens = undefined;
+
+      const response = ResponseHandler.success({ user });
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * @desc    Change password
+   * @route   POST /api/v1/auth/change-password
+   */
+  changePassword = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const clientInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+
+      await this.service.changePassword(
+        req.user,
+        req.body.currentPassword,
+        req.body.newPassword,
+        clientInfo
+      );
+
+      // Clear cookies as user will need to login again
+      this.clearAuthCookies(res);
+
+      const response = ResponseHandler.success(
+        null,
+        "Password changed successfully. Please login again."
+      );
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+}
+
+module.exports = AuthController;

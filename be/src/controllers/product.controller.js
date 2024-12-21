@@ -1,298 +1,173 @@
 // src/controllers/product.controller.js
-const { validationResult } = require("express-validator");
-const productService = require("../services/product.service");
+const BaseController = require("./base/base.controller");
+const ProductService = require("../services/product.service");
+const ResponseHandler = require("../utils/responseHandler");
 
-class ProductController {
-  async getProducts(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const result = await productService.getProducts(req.query, req.user);
-      res.status(200).json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      next(error);
-    }
+class ProductController extends BaseController {
+  constructor() {
+    super(ProductService);
   }
 
-  async getProduct(req, res, next) {
+  /**
+   * Apply discount code to product
+   */
+  applyDiscountCode = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      this.validateRequest(req);
 
-      const product = await productService.getProductById(
+      const product = await this.service.applyDiscountCode(
         req.params.id,
-        req.user
-      );
-      await product.populate([
-        { path: "category", select: "name" },
-        { path: "categoryPath", select: "name" },
-        { path: "updateHistory.updatedBy", select: "username email" },
-      ]);
-
-      res.status(200).json({
-        success: true,
-        data: product,
-      });
-    } catch (error) {
-      if (error.message === "Product not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async createProduct(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const product = await productService.create(req.body, req.user);
-      await product.populate([
-        { path: "category", select: "name" },
-        { path: "categoryPath", select: "name" },
-        { path: "updateHistory.updatedBy", select: "username email" },
-      ]);
-
-      res.status(201).json({
-        success: true,
-        data: product,
-      });
-    } catch (error) {
-      if (
-        [
-          "SKU already exists",
-          "Category not found",
-          "Category is inactive",
-          "Products can only be assigned to leaf categories",
-        ].includes(error.message)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateProduct(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const product = await productService.update(
-        req.params.id,
-        req.body,
-        req.user
-      );
-      await product.populate([
-        { path: "category", select: "name" },
-        { path: "categoryPath", select: "name" },
-        { path: "updateHistory.updatedBy", select: "username email" },
-      ]);
-
-      res.status(200).json({
-        success: true,
-        data: product,
-      });
-    } catch (error) {
-      if (error.message === "Product not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (
-        [
-          "SKU already exists",
-          "Category not found",
-          "Category is inactive",
-          "Products can only be assigned to leaf categories",
-        ].includes(error.message)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateProductStatus(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const product = await productService.updateStatus(
-        req.params.id,
-        parseInt(req.body.status),
+        req.body.code,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        data: product,
-      });
+      const response = ResponseHandler.success(
+        product,
+        "Discount code applied successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Product not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (error.message.includes("Status must be")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
-  }
+  };
 
-  async updateDiscount(req, res, next) {
+  /**
+   * Remove discount from product
+   */
+  removeDiscount = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      const product = await this.service.removeDiscount(
+        req.params.id,
+        req.user
+      );
 
-      const product = await productService.updateDiscount(
+      const response = ResponseHandler.success(
+        product,
+        "Discount removed successfully"
+      );
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * Update product prices
+   */
+  updatePrices = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const updatedData = {
+        importPrice: req.body.importPrice,
+        sellingPrice: req.body.sellingPrice,
+      };
+
+      const product = await this.service.update(
+        req.params.id,
+        updatedData,
+        req.user
+      );
+
+      const response = ResponseHandler.success(
+        product,
+        "Product prices updated successfully"
+      );
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * Update product quantity
+   */
+  updateQuantity = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const product = await this.service.update(
+        req.params.id,
+        { quantity: req.body.quantity },
+        req.user
+      );
+
+      const response = ResponseHandler.success(
+        product,
+        "Product quantity updated successfully"
+      );
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * Discontinue product
+   */
+  discontinue = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const product = await this.service.discontinue(
         req.params.id,
         req.body,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        data: product,
-      });
+      const response = ResponseHandler.success(
+        product,
+        "Product discontinued successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Product not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
-  }
+  };
 
-  async removeDiscount(req, res, next) {
+  /**
+   * Adjust product quantity
+   */
+  adjustQuantity = async (req, res) => {
     try {
-      const result = await productService.removeDiscount(
+      this.validateRequest(req);
+
+      const product = await this.service.adjustQuantity(
         req.params.id,
-        req.user
-      );
-      res.status(200).json({
-        success: true,
-        message: result.message,
-      });
-    } catch (error) {
-      if (error.message === "Product not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async deleteProduct(req, res, next) {
-    try {
-      await productService.delete(req.params.id, req.user);
-      res.status(200).json({
-        success: true,
-        message: "Product deleted successfully",
-      });
-    } catch (error) {
-      if (error.message === "Product not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (error.message.includes("Cannot delete product")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updatePricesByCategory(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const { categoryId } = req.params;
-      const { adjustment, adjustmentType } = req.body;
-
-      const result = await productService.updatePricesByCategory(
-        categoryId,
-        adjustment,
-        adjustmentType,
+        req.body,
         req.user
       );
 
-      res.status(200).json({
-        success: true,
-        data: result,
-      });
+      const response = ResponseHandler.success(
+        product,
+        "Quantity adjusted successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Category not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
-  }
+  };
+
+  /**
+   * Get product location summary
+   */
+  getLocationSummary = async (req, res) => {
+    try {
+      const summary = await this.service.getLocationSummary(req.params.id);
+
+      const response = ResponseHandler.success(summary);
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
 }
 
-module.exports = new ProductController();
+module.exports = ProductController;

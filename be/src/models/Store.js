@@ -1,28 +1,65 @@
+// src/models/Store.js
 const mongoose = require("mongoose");
 
-const bankInfoSchema = new mongoose.Schema({
-  bankId: {
-    type: String,
-    required: [true, "Bank ID is required"],
+const addressSchema = new mongoose.Schema(
+  {
+    detail: {
+      type: String,
+      required: [true, "Address detail is required"],
+      trim: true,
+    },
+    ward: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    district: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    province: {
+      type: String,
+      default: null,
+      trim: true,
+    },
   },
-  bin: {
-    type: String,
-    required: [true, "Bank BIN is required"],
+  { _id: false }
+);
+
+const bankInfoSchema = new mongoose.Schema(
+  {
+    bankId: {
+      type: String,
+      required: [true, "Bank ID is required"],
+      trim: true,
+    },
+    bin: {
+      type: String,
+      required: [true, "Bank BIN is required"],
+      trim: true,
+    },
+    shortName: {
+      type: String,
+      required: [true, "Bank short name is required"],
+      trim: true,
+    },
+    accountNumber: {
+      type: String,
+      required: [true, "Account number is required"],
+      trim: true,
+      maxlength: [19, "Account number cannot exceed 19 characters"],
+      match: [/^\d{8,19}$/, "Account number must be 8-19 digits"],
+    },
+    accountName: {
+      type: String,
+      required: [true, "Account name is required"],
+      trim: true,
+      uppercase: true,
+    },
   },
-  shortName: {
-    type: String,
-    required: [true, "Bank short name is required"],
-  },
-  accountNumber: {
-    type: String,
-    required: [true, "Account number is required"],
-    maxlength: [19, "Account number cannot exceed 19 characters"],
-  },
-  accountName: {
-    type: String,
-    required: [true, "Account name is required"],
-  },
-});
+  { _id: false }
+);
 
 const storeSchema = new mongoose.Schema(
   {
@@ -39,39 +76,51 @@ const storeSchema = new mongoose.Schema(
     },
     email: {
       type: String,
+      default: null,
+      trim: true,
+      lowercase: true,
       match: [
         /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
         "Please add a valid email",
       ],
     },
     address: {
-      detail: {
-        type: String,
-        required: [true, "Address detail is required"],
-      },
-      ward: String,
-      district: String,
-      province: String,
+      type: addressSchema,
+      required: true,
+      default: () => ({
+        detail: "",
+        ward: null,
+        district: null,
+        province: null,
+      }),
     },
     taxCode: {
       type: String,
-      unique: true,
+      default: null,
+      trim: true,
       sparse: true,
       match: [/^[0-9]{10,13}$/, "Invalid tax code format"],
     },
-    bankInfo: bankInfoSchema,
+    bankInfo: {
+      type: bankInfoSchema,
+      default: null,
+    },
     updateHistory: [
       {
         action: String,
         updatedBy: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
+          default: null,
         },
         timestamp: {
           type: Date,
           default: Date.now,
         },
-        changes: Object,
+        changes: {
+          type: Object,
+          default: {},
+        },
       },
     ],
   },
@@ -80,7 +129,18 @@ const storeSchema = new mongoose.Schema(
   }
 );
 
-// Đảm bảo chỉ có một document store
+// Virtual for formatted address
+storeSchema.virtual("fullAddress").get(function () {
+  const parts = [
+    this.address.detail,
+    this.address.ward,
+    this.address.district,
+    this.address.province,
+  ];
+  return parts.filter(Boolean).join(", ");
+});
+
+// Ensure only one store document exists
 storeSchema.pre("save", async function (next) {
   if (this.isNew) {
     const count = await this.constructor.countDocuments();
@@ -91,10 +151,25 @@ storeSchema.pre("save", async function (next) {
   next();
 });
 
-// Virtual cho formatted address
-storeSchema.virtual("fullAddress").get(function () {
-  const { detail, ward, district, province } = this.address;
-  return [detail, ward, district, province].filter(Boolean).join(", ");
+// Pre-save middleware to convert empty strings to null
+storeSchema.pre("save", function (next) {
+  // Convert empty strings to null for root level fields
+  Object.keys(this._doc).forEach((key) => {
+    if (this[key] === "") {
+      this[key] = null;
+    }
+  });
+
+  // Handle nested address object
+  if (this.address) {
+    Object.keys(this.address._doc).forEach((key) => {
+      if (key !== "detail" && this.address[key] === "") {
+        this.address[key] = null;
+      }
+    });
+  }
+
+  next();
 });
 
 module.exports = mongoose.model("Store", storeSchema);

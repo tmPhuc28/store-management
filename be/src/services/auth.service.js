@@ -1,148 +1,111 @@
 // src/services/auth.service.js
-const mongoose = require("mongoose");
+const BaseService = require("./base/base.service");
 const User = require("../models/User");
-const { logAction } = require("../utils/logger");
-const {
-  createHistoryRecord,
-  mergeHistory,
-} = require("../utils/historyHandler");
 const jwt = require("jsonwebtoken");
 
-const authLog = logAction("Auth");
-
-class AuthService {
-  async findUserAndCheckStatus(identifier) {
-    try {
-      // Kiểm tra xem identifier là id hay thông tin đăng nhập
-      let query = {};
-
-      if (mongoose.Types.ObjectId.isValid(identifier)) {
-        query = { _id: identifier };
-      } else {
-        // Nếu là thông tin đăng nhập, tìm theo email hoặc username
-        query = {
-          $or: [
-            { email: identifier.toLowerCase() },
-            { username: identifier.toLowerCase() },
-          ],
-        };
-      }
-
-      // Quan trọng: phải select password vì mặc định password không được select
-      const user = await User.findOne(query).select("+password");
-
-      if (!user) {
-        authLog.error("User not found", null, { identifier });
-        throw new Error("Invalid credentials");
-      }
-
-      if (user.status !== 1) {
-        authLog.error("Inactive user attempted login", null, {
-          userId: user._id,
-        });
-        throw new Error(
-          "Your account is inactive. Please contact administrator"
-        );
-      }
-
-      // Log successful lookup
-      authLog.success("User found and verified", { userId: user._id });
-
-      return user;
-    } catch (error) {
-      // Log error but throw generic message for security
-      authLog.error("User lookup failed", error, { identifier });
-      throw new Error("Invalid credentials");
-    }
+class AuthService extends BaseService {
+  constructor() {
+    super(User, "Auth");
+    this.useTransactions = true;
+    this.excludeFields = [...this.excludeFields];
   }
 
-  async register(userData, reqInfo = {}) {
+  /**
+   * Register new user
+   */
+  async register(data, clientInfo = {}) {
+    let session = null;
     try {
-      // Kiểm tra email và username đã tồn tại chưa
-      const existingUser = await User.findOne({
-        $or: [
-          { email: userData.email },
-          { username: userData.username },
-          { phone: userData.phone },
-        ],
-      });
+      session = await this.startTransaction();
+      // Check for existing user
+      await Promise.all([
+        this.validateUnique({ email: data.email }),
+        this.validateUnique({ username: data.username }),
+      ]);
 
-      if (existingUser) {
-        let field = "email";
-        if (existingUser.username === userData.username) field = "username";
-        if (existingUser.phone === userData.phone) field = "phone";
-        throw new Error(`${field} already registered`);
-      }
+      // Force role to be user (0) for registration
+      const userData = {
+        ...data,
+        role: 0, // Ensure new users are always regular users
+      };
 
-      // Tạo user mới với lịch sử cập nhật
-      const user = await User.create({
-        ...userData,
-        updateHistory: [
+      // Create user with history
+      const user = await this.model.create(
+        [
           {
-            timestamp: new Date(),
-            changes: {
-              action: "register",
-              ...userData,
-              password: "[secured]", // Không lưu mật khẩu vào lịch sử
-            },
+            ...userData,
+            updateHistory: [
+              {
+                action: "register",
+                updatedBy: null, // System action
+                changes: {
+                  ...userData,
+                  password: "[secured]",
+                },
+              },
+            ],
           },
         ],
-      });
-
-      // Log hoạt động
-      await user.logActivity(
-        "register",
-        {
-          email: userData.email,
-          username: userData.username,
-        },
-        reqInfo
+        { session }
       );
 
-      authLog.success("New user registered", {
-        userId: user._id,
-        email: user.email,
+      await this.endTransaction(session, true);
+
+      this.logger.success("User registered successfully", {
+        userId: user[0]._id,
+        email: user[0].email,
+        ...clientInfo,
       });
 
-      return user;
+      return user[0];
     } catch (error) {
-      authLog.error("Registration failed", error, { userData });
+      await this.endTransaction(session, false);
+      this.logger.error("Registration failed", error);
       throw error;
     }
   }
 
-  async login(credentials, reqInfo = {}) {
+  /**
+   * Login user
+   */
+  async login(credentials, clientInfo = {}) {
     try {
       const { login, password } = credentials;
 
-      // Tìm user và kiểm tra trạng thái
-      const user = await this.findUserAndCheckStatus(login);
+      // Find user by email or username
+      const user = await this.model
+        .findOne({
+          $or: [
+            { email: login.toLowerCase() },
+            { username: login.toLowerCase() },
+          ],
+          status: 1,
+        })
+        .select("+password");
 
-      // Kiểm tra mật khẩu
-      const isMatch = await user.matchPassword(password);
-      if (!isMatch) {
-        authLog.error("Password mismatch", null, { userId: user._id });
+      if (!user) {
         throw new Error("Invalid credentials");
       }
 
-      // Tạo tokens
-      const accessToken = user.getSignedJwtToken();
+      // Check password
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        throw new Error("Invalid credentials");
+      }
+
+      // Generate tokens
+      const accessToken = user.generateAuthToken();
       const refreshToken = user.generateRefreshToken();
-      await user.save(); // Lưu refresh token
 
-      // Cập nhật thông tin đăng nhập
-      await user.updateLastLogin(reqInfo);
-      await user.logActivity(
-        "login",
-        {
-          loginMethod: login.includes("@") ? "email" : "username",
-        },
-        reqInfo
-      );
+      // Update last login
+      await user.updateLastLogin(clientInfo.ipAddress, clientInfo.userAgent);
 
-      authLog.success("User logged in successfully", {
+      // Save user with new refresh token
+      await user.save();
+
+      this.logger.success("User logged in successfully", {
         userId: user._id,
-        email: user.email,
+        ...clientInfo,
       });
 
       return {
@@ -151,24 +114,23 @@ class AuthService {
         refreshToken,
       };
     } catch (error) {
-      // Log chi tiết lỗi nhưng trả về thông báo chung
-      authLog.error("Login failed", error, { login: credentials.login });
-      throw new Error("Invalid credentials");
+      this.logger.error("Login failed", error);
+      throw error;
     }
   }
 
-  async refreshToken(oldRefreshToken, reqInfo = {}) {
+  /**
+   * Refresh access token
+   */
+  async refreshToken(refreshToken, clientInfo = {}) {
     try {
       // Verify refresh token
-      const decoded = jwt.verify(
-        oldRefreshToken,
-        process.env.JWT_REFRESH_SECRET
-      );
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
-      // Get user and check if refresh token exists
-      const user = await User.findById(decoded.id);
+      // Get user and check token exists
+      const user = await this.model.findById(decoded.id);
       const tokenExists = user.refreshTokens.find(
-        (t) => t.token === oldRefreshToken
+        (t) => t.token === refreshToken
       );
 
       if (!user || !tokenExists) {
@@ -176,135 +138,117 @@ class AuthService {
       }
 
       // Remove old refresh token
-      await user.removeRefreshToken(oldRefreshToken);
+      await user.removeRefreshToken(refreshToken);
 
       // Generate new tokens
-      const accessToken = user.getSignedJwtToken();
-      const refreshToken = user.generateRefreshToken();
+      const accessToken = user.generateAuthToken();
+      const newRefreshToken = user.generateRefreshToken();
+
+      // Save user with new refresh token
       await user.save();
 
-      // Log activity
-      await user.logActivity("token_refresh", {}, reqInfo);
-
-      authLog.success("Tokens refreshed", {
+      this.logger.success("Tokens refreshed successfully", {
         userId: user._id,
+        ...clientInfo,
       });
 
       return {
         accessToken,
-        refreshToken,
+        refreshToken: newRefreshToken,
       };
     } catch (error) {
-      authLog.error("Token refresh failed", error);
+      this.logger.error("Token refresh failed", error);
       throw error;
     }
   }
 
-  async logout(user, refreshToken, reqInfo = {}) {
+  /**
+   * Logout user
+   */
+  async logout(user, refreshToken, clientInfo = {}) {
     try {
-      // Remove refresh token if provided
       if (refreshToken) {
         await user.removeRefreshToken(refreshToken);
       }
 
-      await user.logActivity("logout", {}, reqInfo);
-
-      authLog.success("User logged out", {
+      this.logger.success("User logged out successfully", {
         userId: user._id,
+        ...clientInfo,
       });
 
       return true;
     } catch (error) {
-      authLog.error("Logout failed", error, {
-        userId: user._id,
-      });
+      this.logger.error("Logout failed", error);
       throw error;
     }
   }
 
-  async logoutAll(user, reqInfo = {}) {
+  /**
+   * Logout from all devices
+   */
+  async logoutAll(user, clientInfo = {}) {
     try {
-      // Remove all refresh tokens
       await user.removeAllRefreshTokens();
-      await user.logActivity("logout_all", {}, reqInfo);
 
-      authLog.success("User logged out from all devices", {
+      this.logger.success("User logged out from all devices", {
         userId: user._id,
+        ...clientInfo,
       });
 
       return true;
     } catch (error) {
-      authLog.error("Logout all failed", error, {
-        userId: user._id,
-      });
+      this.logger.error("Logout all failed", error);
       throw error;
     }
   }
 
-  async changePassword(user, currentPassword, newPassword, reqInfo = {}) {
+  /**
+   * Change password
+   */
+  async changePassword(user, currentPassword, newPassword, clientInfo = {}) {
     try {
-      user = await User.findById(user._id).select("+password");
+      const userWithPassword = await this.model
+        .findById(user._id)
+        .select("+password");
 
       // Verify current password
-      const isMatch = await user.matchPassword(currentPassword);
+      const isMatch = await userWithPassword.matchPassword(currentPassword);
       if (!isMatch) {
         throw new Error("Current password is incorrect");
       }
 
       // Update password
-      user.password = newPassword;
-      user.updateHistory.push(
-        createHistoryRecord(user, { password: "[updated]" }, "password_change")
-      );
-      await user.save();
+      userWithPassword.password = newPassword;
+      await userWithPassword.save();
 
-      // Log out from all devices for security
-      await this.logoutAll(user, reqInfo);
+      // Logout from all devices
+      await this.logoutAll(userWithPassword, clientInfo);
 
-      // Log activity
-      await user.logActivity("password_change", {}, reqInfo);
-
-      authLog.success("Password changed", {
+      this.logger.success("Password changed successfully", {
         userId: user._id,
+        ...clientInfo,
       });
 
-      // Generate new tokens
-      const accessToken = user.getSignedJwtToken();
-      const refreshToken = user.generateRefreshToken();
-      await user.save();
-
-      return {
-        accessToken,
-        refreshToken,
-      };
+      return true;
     } catch (error) {
-      authLog.error("Password change failed", error, {
-        userId: user._id,
-      });
+      this.logger.error("Password change failed", error);
       throw error;
     }
   }
 
-  // Các helper methods
-  createTokenResponse(user, refreshToken = null) {
-    const accessToken = user.getSignedJwtToken();
-
-    const cookieOptions = {
-      expires: new Date(
-        Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
-      ),
-      httpOnly: true,
-    };
-
-    if (process.env.NODE_ENV === "production") {
-      cookieOptions.secure = true;
+  /**
+   * Override base methods
+   */
+  async validateUnique(data) {
+    if (data.email) {
+      const existing = await this.model.findOne({ email: data.email });
+      if (existing) throw new Error("Email already registered");
     }
 
-    return {
-      accessToken,
-      refreshToken: refreshToken || null,
-      cookieOptions,
-    };
+    if (data.username) {
+      const existing = await this.model.findOne({ username: data.username });
+      if (existing) throw new Error("Username already taken");
+    }
   }
 }
 

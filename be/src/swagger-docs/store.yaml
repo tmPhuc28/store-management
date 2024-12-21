@@ -1,9 +1,55 @@
+# src/swagger/store.yaml
+openapi: '3.0.3'
+info:
+  title: Store Management API
+  description: API documentation for the Store Management system
+  version: 1.0.0
 tags:
   - name: Store
-    description: Store management
+    description: Store management endpoints
 
 components:
   schemas:
+    Address:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "123 Main Street"
+        ward:
+          type: string
+          example: "Ward 1"
+        district:
+          type: string
+          example: "District 1"
+        province:
+          type: string
+          example: "Ho Chi Minh City"
+
+    BankInfo:
+      type: object
+      required:
+        - bankId
+        - accountNumber
+        - accountName
+      properties:
+        bankId:
+          type: string
+          example: "MB"
+        bin:
+          type: string
+          example: "970422"
+        shortName:
+          type: string
+          example: "MBBank"
+        accountNumber:
+          type: string
+          pattern: ^\d{8,19}$
+          example: "0987654321"
+        accountName:
+          type: string
+          example: "COFFEE SHOP"
+
     Store:
       type: object
       required:
@@ -13,7 +59,7 @@ components:
       properties:
         name:
           type: string
-          example: Coffee Shop
+          example: "Coffee Shop"
         phone:
           type: string
           example: "0283123456"
@@ -21,34 +67,18 @@ components:
           type: string
           format: email
         address:
-          type: object
-          properties:
-            detail:
-              type: string
-            ward:
-              type: string
-            district:
-              type: string
-            province:
-              type: string
+          $ref: '#/components/schemas/Address'
         taxCode:
           type: string
+          pattern: ^\d{10,13}$
         bankInfo:
-          type: object
-          properties:
-            bankId:
-              type: string
-            accountNumber:
-              type: string
-            accountName:
-              type: string
+          $ref: '#/components/schemas/BankInfo'
 
 paths:
   /api/v2/store:
     get:
       summary: Get store information
-      tags:
-        - Store
+      tags: [Store]
       security:
         - bearerAuth: []
       responses:
@@ -58,10 +88,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Store"
+        404:
+          description: Store information not found
+    
     put:
       summary: Update store information (Admin only)
-      tags:
-        - Store
+      tags: [Store]
       security:
         - bearerAuth: []
       requestBody:
@@ -73,14 +105,17 @@ paths:
       responses:
         200:
           description: Store updated successfully
+        400:
+          description: Validation error
         403:
-          description: Not admin
+          description: Not authorized (Admin only)
+        404:
+          description: Store not found
 
   /api/v2/store/bank-info:
     get:
       summary: Get store's bank information
-      tags:
-        - Store
+      tags: [Store]
       security:
         - bearerAuth: []
       responses:
@@ -89,20 +124,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  bankId:
-                    type: string
-                  accountNumber:
-                    type: string
-                  accountName:
-                    type: string
-                  bankName:
-                    type: string
+                $ref: "#/components/schemas/BankInfo"
+        404:
+          description: Bank information not found
+
     put:
       summary: Update store's bank information (Admin only)
-      tags:
-        - Store
+      tags: [Store]
       security:
         - bearerAuth: []
       requestBody:
@@ -110,26 +138,13 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - bankId
-                - accountNumber
-                - accountName
-              properties:
-                bankId:
-                  type: string
-                  example: "MB"
-                accountNumber:
-                  type: string
-                  pattern: ^\d{8,19}$
-                  example: "0987654321"
-                accountName:
-                  type: string
-                  example: "COFFEE SHOP"
+              $ref: "#/components/schemas/BankInfo"
       responses:
         200:
-          description: Bank info updated successfully
+          description: Bank information updated successfully
         400:
-          description: Invalid bank info
+          description: Validation error
         403:
-          description: Not admin
+          description: Not authorized (Admin only)
+        404:
+          description: Store not found

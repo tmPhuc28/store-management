@@ -1,6 +1,4 @@
-// src/validators/category.validator.js
 const { body } = require("express-validator");
-const { statusValidator } = require("./common.validator");
 
 exports.createCategoryValidator = [
   body("name")
@@ -9,6 +7,33 @@ exports.createCategoryValidator = [
     .withMessage("Category name is required")
     .isLength({ max: 50 })
     .withMessage("Name cannot be more than 50 characters"),
+
+  body("code")
+    .trim()
+    .notEmpty()
+    .withMessage("Category code is required")
+    .matches(/^[A-Za-z0-9-]+$/)
+    .withMessage("Code can only contain letters, numbers, and hyphens")
+    .isLength({ max: 20 })
+    .withMessage("Code cannot be more than 20 characters"),
+
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Description cannot be more than 500 characters"),
+
+  body("parentCategory")
+    .optional()
+    .trim()
+    .isMongoId()
+    .withMessage("Invalid parent category ID"),
+
+  body("status")
+    .optional()
+    .isIn([0, 1])
+    .withMessage("Status must be either 0 (inactive) or 1 (active)")
+    .toInt(),
 ];
 
 exports.updateCategoryValidator = [
@@ -18,11 +43,13 @@ exports.updateCategoryValidator = [
     .isLength({ max: 50 })
     .withMessage("Name cannot be more than 50 characters"),
 
-  body("description")
+  body("code")
     .optional()
     .trim()
-    .isLength({ max: 500 })
-    .withMessage("Description cannot be more than 500 characters"),
+    .matches(/^[A-Za-z0-9-]+$/)
+    .withMessage("Code can only contain letters, numbers, and hyphens")
+    .isLength({ max: 20 })
+    .withMessage("Code cannot be more than 20 characters"),
 
-  statusValidator,
+  ...exports.createCategoryValidator.slice(2),
 ];

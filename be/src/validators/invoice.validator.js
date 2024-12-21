@@ -4,8 +4,31 @@ const {
   PAYMENT_METHODS,
 } = require("../constants/invoice.constants");
 
+// Add bank transfer validation
+exports.bankTransferInfoValidator = {
+  bankName: {
+    notEmpty: true,
+    errorMessage: "Bank name is required",
+  },
+  accountNumber: {
+    notEmpty: true,
+    isLength: { min: 8, max: 20 },
+    errorMessage: "Valid account number is required",
+  },
+  accountHolder: {
+    notEmpty: true,
+    errorMessage: "Account holder name is required",
+  },
+};
+
 // Validate create invoice
 exports.createInvoiceValidator = [
+  body("items").isArray().withMessage("Items must be an array"),
+  body("items.*.product").isMongoId().withMessage("Invalid product ID"),
+  body("items.*.quantity")
+    .isInt({ min: 1 })
+    .withMessage("Quantity must be at least 1"),
+  // Thêm validation rules khác
   // Customer validation
   body("customer")
     .notEmpty()
@@ -30,6 +53,12 @@ exports.createInvoiceValidator = [
     .isInt({ min: 1 })
     .withMessage("Quantity must be at least 1"),
 
+  // Items price validation
+  body("items.*.price")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Price must be non-negative"),
+
   // Payment method validation
   body("paymentMethod")
     .notEmpty()
@@ -51,12 +80,32 @@ exports.createInvoiceValidator = [
     .isLength({ max: 500 })
     .withMessage("Notes cannot exceed 500 characters"),
 
-  // Bank transfer specific validation
+  // Bank transfer specific validation - enhanced
   body("bankTransferInfo")
     .if(body("paymentMethod").equals(PAYMENT_METHODS.BANK_TRANSFER))
+    .notEmpty()
+    .isObject()
+    .withMessage("Bank transfer info must be an object")
+    .custom((value) => {
+      const { bankName, accountNumber, accountHolder } = value;
+      if (!bankName || !accountNumber || !accountHolder) {
+        throw new Error("Invalid bank transfer information");
+      }
+      return true;
+    }),
+
+  // Optional delivery info
+  body("deliveryInfo")
     .optional()
     .isObject()
-    .withMessage("Bank transfer info must be an object"),
+    .withMessage("Delivery info must be an object"),
+
+  body("deliveryInfo.address")
+    .optional()
+    .isString()
+    .trim()
+    .notEmpty()
+    .withMessage("Delivery address cannot be empty"),
 ];
 
 // Validate status update
@@ -82,26 +131,33 @@ exports.updateStatusValidator = [
     .withMessage("Notes cannot exceed 500 characters"),
 ];
 
-// Validate payment confirmation
-exports.confirmPaymentValidator = [
+// Enhanced payment validator
+exports.paymentValidator = [
   body("amount")
     .notEmpty()
     .withMessage("Payment amount is required")
     .isFloat({ min: 0 })
     .withMessage("Amount must be greater than 0"),
 
-  body("transactionId")
-    .if(body("paymentMethod").equals(PAYMENT_METHODS.BANK_TRANSFER))
-    .notEmpty()
-    .withMessage("Transaction ID is required for bank transfer")
-    .matches(/^[A-Za-z0-9]{6,20}$/)
-    .withMessage("Invalid transaction ID format"),
-
   body("notes")
     .optional()
     .trim()
     .isLength({ max: 500 })
     .withMessage("Notes cannot exceed 500 characters"),
+
+  body("transactionId")
+    .if(body("paymentMethod").equals(PAYMENT_METHODS.BANK_TRANSFER))
+    .notEmpty()
+    .withMessage("Transaction ID is required for bank transfer")
+    .isString()
+    .trim()
+    .isLength({ min: 6, max: 50 })
+    .withMessage("Transaction ID must be between 6 and 50 characters"),
+
+  body("paymentProof")
+    .optional()
+    .isURL()
+    .withMessage("Payment proof must be a valid URL"),
 ];
 
 // Validate refund
@@ -169,7 +225,7 @@ exports.getInvoicesValidator = [
   query("customer").optional().isMongoId().withMessage("Invalid customer ID"),
 ];
 
-// Validate statistics query
+// Enhanced statistics validator
 exports.statisticsValidator = [
   query("startDate")
     .optional()
@@ -185,4 +241,14 @@ exports.statisticsValidator = [
     .optional()
     .isIn(["daily", "monthly", "payment_methods", "top_products"])
     .withMessage("Invalid statistics type"),
+
+  query("groupBy")
+    .optional()
+    .isIn(["day", "week", "month", "quarter", "year"])
+    .withMessage("Invalid grouping parameter"),
+
+  query("paymentMethod")
+    .optional()
+    .isIn(Object.values(PAYMENT_METHODS))
+    .withMessage("Invalid payment method"),
 ];

@@ -1,289 +1,140 @@
-// src/services/category.service.js
+const BaseService = require("./base/base.service");
 const Category = require("../models/Category");
-const normalizeData = require("../utils/normalizeData");
 const { checkDuplicate } = require("../utils/duplicateCheck");
-const {
-  createHistoryRecord,
-  mergeHistory,
-} = require("../utils/historyHandler");
-const { logAction } = require("../utils/logger");
-const { validateGeneralStatusChange } = require("../utils/statusValidator");
 
-const categoryLog = logAction("Category");
-
-class CategoryService {
+class CategoryService extends BaseService {
   constructor() {
+    super(Category, "Category");
     this.nullableFields = ["description", "parentCategory"];
-    this.model = Category;
+    this.useHistory = true;
+    this.useTransactions = true;
+    this.excludeFields = [...this.excludeFields];
   }
 
-  async getCategories(query = {}, user = null) {
-    try {
-      const {
-        page = 1,
-        limit = 10,
-        search = "",
-        status,
-        parent: parentId,
-        sortBy = "-createdAt",
-      } = query;
-
-      const startIndex = (page - 1) * limit;
-      const queryObj = {};
-
-      // Build search query
-      if (search) {
-        queryObj.$or = [
-          { name: { $regex: search, $options: "i" } },
-          { description: { $regex: search, $options: "i" } },
-        ];
-      }
-
-      // Handle parent category filter
-      if (parentId === "null") {
-        queryObj.parentCategory = null;
-      } else if (parentId) {
-        queryObj.parentCategory = parentId;
-      }
-
-      // Handle status filter
-      if (status !== undefined) {
-        queryObj.status = parseInt(status);
-      }
-
-      const [total, categories] = await Promise.all([
-        this.model.countDocuments(queryObj),
-        this.model
-          .find(queryObj)
-          .populate("parentCategory", "name")
-          .populate("createdBy", "username")
-          .populate("updateHistory.updatedBy", "username")
-          .sort(sortBy)
-          .skip(startIndex)
-          .limit(parseInt(limit)),
-      ]);
-
-      categoryLog.success("Retrieved categories list", {
-        userId: user?._id,
-        query: queryObj,
-      });
-
-      return {
-        count: categories.length,
-        total,
-        totalPages: Math.ceil(total / limit),
-        currentPage: parseInt(page),
-        data: categories,
-      };
-    } catch (error) {
-      categoryLog.error("Failed to retrieve categories", error);
-      throw error;
-    }
+  getSearchFields() {
+    return ["name", "code", "description"];
   }
 
-  async getCategoryById(id, user) {
-    try {
-      const category = await this.model
-        .findById(id)
-        .populate("parentCategory", "name")
-        .populate("createdBy", "username email")
-        .populate("updateHistory.updatedBy", "username email");
-
-      if (!category) {
-        throw new Error("Category not found");
-      }
-
-      categoryLog.success("Retrieved category details", {
-        categoryId: id,
-        userId: user?._id,
-      });
-
-      return category;
-    } catch (error) {
-      categoryLog.error("Failed to retrieve category", error, {
-        categoryId: id,
-        userId: user?._id,
-      });
-      throw error;
-    }
-  }
-
-  async validateCategory(data, categoryId = null) {
-    // Validate category name uniqueness
-    await this.validateCategoryName(data.name, categoryId);
-
-    // Validate parent category if provided
-    if (data.parentCategory) {
-      await this.validateParentCategory(data.parentCategory, categoryId);
-    }
-
-    // Normalize nullable fields
-    return normalizeData(data, this.nullableFields);
-  }
-
-  async create(data, user) {
-    try {
-      // Validate and normalize data
-      const normalizedData = await this.validateCategory(data);
-
-      // Prepare category data with history record
-      const categoryData = {
-        ...normalizedData,
-        createdBy: user._id,
-        status: data.status !== undefined ? parseInt(data.status) : 1,
-        updateHistory: [createHistoryRecord(user, normalizedData, "create")],
-      };
-
-      // Create category
-      const category = await this.model.create(categoryData);
-
-      categoryLog.success("Created category", {
-        categoryId: category._id,
-        userId: user._id,
-        data: normalizedData,
-      });
-
-      return category;
-    } catch (error) {
-      categoryLog.error("Failed to create category", error, {
-        userId: user._id,
-        data,
-      });
-      throw error;
-    }
-  }
-
-  async update(id, data, user) {
-    try {
-      const category = await this.getCategoryById(id, user);
-
-      // Validate and normalize update data
-      const normalizedData = await this.validateCategory(data, id);
-
-      // Create history record and merge with existing history
-      const historyRecord = createHistoryRecord(user, normalizedData, "update");
-      const updateHistory = mergeHistory(category.updateHistory, historyRecord);
-
-      // Update category
-      const updatedCategory = await this.model.findByIdAndUpdate(
-        id,
-        { ...normalizedData, updateHistory },
-        { new: true }
-      );
-
-      categoryLog.success("Updated category", {
-        categoryId: id,
-        userId: user._id,
-        changes: normalizedData,
-      });
-
-      return updatedCategory;
-    } catch (error) {
-      categoryLog.error("Failed to update category", error, {
-        categoryId: id,
-        userId: user._id,
-        data,
-      });
-      throw error;
-    }
-  }
-
-  async deleteCategory(id, user) {
-    try {
-      const category = await this.getCategoryById(id, user);
-
-      // Check for subcategories
-      const hasSubcategories = await this.model.findOne({ parentCategory: id });
-      if (hasSubcategories) {
-        throw new Error(
-          "Cannot delete category with subcategories. Please delete subcategories first."
-        );
-      }
-
-      await category.deleteOne();
-
-      categoryLog.success("Deleted category", {
-        categoryId: id,
-        userId: user._id,
-        categoryName: category.name,
-      });
-
-      return { message: "Category deleted successfully" };
-    } catch (error) {
-      categoryLog.error("Failed to delete category", error, {
-        categoryId: id,
-        userId: user._id,
-      });
-      throw error;
-    }
-  }
-
-  async updateStatus(id, status, user) {
-    try {
-      const category = await this.getCategoryById(id, user);
-
-      // Validate status change
-      const validation = validateGeneralStatusChange(category, status);
-      if (!validation.isValid) {
-        throw new Error(validation.message);
-      }
-
-      // Create history record for status change
-      const historyRecord = createHistoryRecord(
-        user,
-        { status },
-        "status_update"
-      );
-      const updateHistory = mergeHistory(category.updateHistory, historyRecord);
-
-      const updatedCategory = await this.model.findByIdAndUpdate(
-        id,
-        { status, updateHistory },
-        { new: true }
-      );
-
-      categoryLog.success("Updated category status", {
-        categoryId: id,
-        userId: user._id,
-        oldStatus: category.status,
-        newStatus: status,
-      });
-
-      return updatedCategory;
-    } catch (error) {
-      categoryLog.error("Failed to update category status", error, {
-        categoryId: id,
-        userId: user._id,
-        status,
-      });
-      throw error;
-    }
-  }
-
-  async getLeafCategories(options = { activeOnly: true }) {
-    try {
-      const leafCategories = await this.model.getLeaves(options);
-
-      await this.model.populate(leafCategories, [
+  getPopulateConfig(view = "list") {
+    const configs = {
+      list: [
         { path: "parentCategory", select: "name" },
         { path: "createdBy", select: "username" },
-      ]);
+      ],
+      detail: [
+        { path: "parentCategory", select: "name code path" },
+        { path: "path", select: "name code" },
+        { path: "createdBy", select: "username email" },
+        { path: "updateHistory.updatedBy", select: "username email" },
+      ],
+    };
+    return configs[view] || configs.list;
+  }
 
-      categoryLog.success("Retrieved leaf categories", {
-        count: leafCategories.length,
-        options,
-      });
+  buildCustomQuery(params) {
+    const query = {};
 
-      return leafCategories;
-    } catch (error) {
-      categoryLog.error("Failed to retrieve leaf categories", error, {
-        options,
-      });
-      throw error;
+    if (params.status !== undefined) {
+      query.status = parseInt(params.status);
+    }
+
+    if (params.level !== undefined) {
+      query.level = parseInt(params.level);
+    }
+
+    if (params.isLeaf !== undefined) {
+      query.isLeaf = params.isLeaf === "true";
+    }
+
+    if (params.parent !== undefined) {
+      query.parentCategory = params.parent === "null" ? null : params.parent;
+    }
+
+    return query;
+  }
+
+  async validateUnique(data, excludeId = null) {
+    if (data.code) {
+      await checkDuplicate(
+        this.model,
+        { code: data.code.toUpperCase() },
+        excludeId,
+        "Category code already exists"
+      );
+    }
+
+    // Check unique name within same level
+    if (data.name) {
+      const parentId = data.parentCategory || null;
+      await checkDuplicate(
+        this.model,
+        {
+          name: data.name,
+          parentCategory: parentId,
+        },
+        excludeId,
+        "Category name already exists at this level"
+      );
     }
   }
 
-  async getTopCategories(options = { onlyActive: true }) {
+  async validateStatusChange(document, newStatus) {
+    // First perform base validation
+    const baseValidation = await super.validateStatusChange(
+      document,
+      newStatus
+    );
+    if (!baseValidation.isValid) {
+      return baseValidation;
+    }
+
+    // Cannot deactivate if has active children
+    if (newStatus === 0) {
+      const hasActiveChildren = await this.model.exists({
+        parentCategory: document._id,
+        status: 1,
+      });
+
+      if (hasActiveChildren) {
+        return {
+          isValid: false,
+          message: "Cannot deactivate category with active sub-categories",
+        };
+      }
+
+      // Check for active products
+      const Product = require("../models/Product");
+      const hasActiveProducts = await Product.exists({
+        category: document._id,
+        status: 1,
+      });
+
+      if (hasActiveProducts) {
+        return {
+          isValid: false,
+          message: "Cannot deactivate category with active products",
+        };
+      }
+    }
+
+    // Cannot activate if parent is inactive
+    if (newStatus === 1 && document.parentCategory) {
+      const parent = await this.model.findById(document.parentCategory);
+      if (parent && parent.status === 0) {
+        return {
+          isValid: false,
+          message: "Cannot activate category when parent category is inactive",
+        };
+      }
+    }
+
+    return { isValid: true };
+  }
+
+  /**
+   * Get root categories
+   */
+  async getRootCategories(options = { onlyActive: true }) {
     try {
       let query = this.model.find().byParent(null);
 
@@ -292,87 +143,100 @@ class CategoryService {
       }
 
       const categories = await query
-        .populate("parentCategory", "name")
-        .populate("createdBy", "username")
+        .populate(this.getPopulateConfig())
         .sort("name");
 
-      categoryLog.success("Retrieved top categories", {
-        count: categories.length,
-        options,
-      });
-
-      return categories;
+      return this.processResponse(categories);
     } catch (error) {
-      categoryLog.error("Failed to retrieve top categories", error, {
-        options,
-      });
+      this.logger.error("Failed to get root categories", error);
       throw error;
     }
   }
 
-  async getCategoryPath(id, user) {
+  /**
+   * Get leaf categories
+   */
+  async getLeafCategories(options = { activeOnly: true }) {
     try {
-      const category = await this.getCategoryById(id, user);
-      const path = await category.getPath();
+      let query = this.model.find().leaves();
 
-      await this.model.populate(path, [
-        { path: "parentCategory", select: "name" },
-        { path: "createdBy", select: "username" },
-      ]);
+      if (options.activeOnly) {
+        query = query.active();
+      }
 
-      categoryLog.success("Retrieved category path", {
-        categoryId: id,
-        pathLength: path.length,
-        userId: user?._id,
-      });
+      const categories = await query
+        .populate(this.getPopulateConfig())
+        .sort("name");
 
-      return path;
+      return this.processResponse(categories);
     } catch (error) {
-      categoryLog.error("Failed to retrieve category path", error, {
-        categoryId: id,
-        userId: user?._id,
-      });
+      this.logger.error("Failed to get leaf categories", error);
       throw error;
     }
   }
 
-  // Helper methods
-  async validateCategoryName(name, excludeId = null) {
-    return checkDuplicate(this.model, { name }, excludeId);
+  /**
+   * Get category path from root
+   */
+  async getCategoryPath(id) {
+    try {
+      const category = await this.model
+        .findById(id)
+        .populate("path", "name code");
+
+      if (!category) {
+        throw new Error("Category not found");
+      }
+
+      return this.processResponse(category.path);
+    } catch (error) {
+      this.logger.error("Failed to get category path", error);
+      throw error;
+    }
   }
 
-  async validateParentCategory(parentId, categoryId = null) {
-    if (!parentId) return true;
+  /**
+   * Get category children
+   */
+  async getChildren(id, options = { onlyActive: true }) {
+    try {
+      let query = this.model.find({ parentCategory: id });
 
-    if (categoryId && parentId === categoryId) {
-      throw new Error("Category cannot be its own parent");
-    }
-
-    const parentCategory = await this.model.findById(parentId);
-    if (!parentCategory) {
-      throw new Error("Parent category not found");
-    }
-
-    if (!parentCategory.status) {
-      throw new Error("Parent category is inactive");
-    }
-
-    // Check for circular reference
-    if (categoryId) {
-      let currentParent = parentCategory;
-      const visitedIds = new Set([categoryId]);
-
-      while (currentParent) {
-        if (visitedIds.has(currentParent._id.toString())) {
-          throw new Error("Circular reference detected in category hierarchy");
-        }
-        visitedIds.add(currentParent._id.toString());
-        if (!currentParent.parentCategory) break;
-        currentParent = await this.model.findById(currentParent.parentCategory);
+      if (options.onlyActive) {
+        query = query.active();
       }
-    }
 
-    return true;
+      const children = await query
+        .populate(this.getPopulateConfig())
+        .sort("name");
+
+      return this.processResponse(children);
+    } catch (error) {
+      this.logger.error("Failed to get category children", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all descendants
+   */
+  async getDescendants(id, options = { onlyActive: true }) {
+    try {
+      let query = this.model.find({ path: id });
+
+      if (options.onlyActive) {
+        query = query.active();
+      }
+
+      const descendants = await query
+        .populate(this.getPopulateConfig())
+        .sort("level");
+
+      return this.processResponse(descendants);
+    } catch (error) {
+      this.logger.error("Failed to get category descendants", error);
+      throw error;
+    }
   }
 }
 

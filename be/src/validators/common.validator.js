@@ -31,20 +31,24 @@ exports.objectIdValidator = (paramName = "id") =>
   param(paramName).isMongoId().withMessage("Invalid ID format");
 
 // Sort validation helper
-exports.sortValidator = query("sortBy")
-  .optional()
-  .matches(/^-?[a-zA-Z]+$/)
-  .withMessage("Invalid sort format. Use fieldName or -fieldName");
+exports.sortValidator = [
+  query("sort")
+    .optional()
+    .isString()
+    .matches(/^[-]?\w+$/)
+    .withMessage("Invalid sort format. Use fieldName or -fieldName"),
+];
 
 // Search validation helper
-exports.searchValidator = query("search")
-  .optional()
-  .trim()
-  .isLength({ min: 1 })
-  .withMessage("Search term cannot be empty if provided")
-  .isLength({ max: 100 })
-  .withMessage("Search term too long")
-  .escape();
+exports.searchValidator = [
+  query("search")
+    .optional()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage("Search term cannot be empty")
+    .isLength({ max: 100 })
+    .withMessage("Search term too long"),
+];
 
 // Date range validation helper
 exports.dateRangeValidator = [

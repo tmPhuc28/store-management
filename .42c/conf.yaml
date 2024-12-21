@@ -1,0 +1,3 @@
+apis:
+  be/src/swagger-docs/payment.yaml:
+    alias: openapi

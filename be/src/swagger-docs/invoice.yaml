@@ -1,0 +1,426 @@
+openapi: 3.0.0
+info:
+  title: Invoice API
+  description: API for managing invoices
+  version: 1.0.0
+tags:
+  - name: Invoices
+    description: Invoice management endpoints
+
+components:
+  parameters:
+    limit:
+      name: limit
+      in: query
+      description: Number of items to return
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+    page:
+      name: page
+      in: query
+      description: Page number to return
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    InvoiceItem:
+      type: object
+      required:
+        - product
+        - quantity
+      properties:
+        product:
+          type: string
+          description: Product ID
+        quantity:
+          type: number
+          minimum: 1
+          description: Quantity of product
+        importPrice:
+          type: number
+          readOnly: true
+        price:
+          type: number
+          readOnly: true
+        discount:
+          type: object
+          properties:
+            code:
+              type: string
+            type:
+              type: string
+              enum: [percentage, fixed]
+            value:
+              type: number
+            amount:
+              type: number
+        finalPrice:
+          type: number
+          readOnly: true
+        subTotal:
+          type: number
+          readOnly: true
+
+    Pagination:
+      type: object
+      properties:
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+        currentPage:
+          type: integer
+        pageSize:
+          type: integer
+
+    BankTransferInfo:
+      type: object
+      required:
+        - bankName
+        - accountNumber
+        - accountHolder
+      properties:
+        bankName:
+          type: string
+        accountNumber:
+          type: string
+          minLength: 8
+          maxLength: 20
+        accountHolder:
+          type: string
+        branch:
+          type: string
+        swiftCode:
+          type: string
+
+    DeliveryInfo:
+      type: object
+      properties:
+        address:
+          type: string
+        contactPerson:
+          type: string
+        contactPhone:
+          type: string
+        notes:
+          type: string
+
+    Invoice:
+      type: object
+      required:
+        - customer
+        - items
+        - payment
+      properties:
+        invoiceNumber:
+          type: string
+          readOnly: true
+        customer:
+          type: string
+          description: Customer ID
+        status:
+          type: string
+          enum: [pending, confirmed, paid, completed, canceled, refunded]
+          default: pending
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceItem'
+        subTotal:
+          type: number
+          readOnly: true
+        discount:
+          type: object
+          properties:
+            code:
+              type: string
+            type:
+              type: string
+              enum: [percentage, fixed]
+            value:
+              type: number
+            amount:
+              type: number
+        total:
+          type: number
+          readOnly: true
+        payment:
+          type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum: [cash, bank_transfer]
+            amount:
+              type: number
+            paidAmount:
+              type: number
+              readOnly: true
+            paidAt:
+              type: string
+              format: date-time
+              readOnly: true
+            bankTransfer:
+              type: object
+              properties:
+                transactionId:
+                  type: string
+                bankReference:
+                  type: string
+                qrCode:
+                  type: string
+        notes:
+          type: string
+        deliveryInfo:
+          $ref: '#/components/schemas/DeliveryInfo'
+        bankTransferInfo:
+          $ref: '#/components/schemas/BankTransferInfo'
+
+paths:
+  /api/v1/invoices:
+    get:
+      summary: Get all invoices
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, confirmed, paid, completed, canceled, refunded]
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      summary: Create new invoice
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Invoice'
+      responses:
+        201:
+          description: Invoice created successfully
+
+  /api/v1/invoices/{id}/status:
+    patch:
+      summary: Update invoice status
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [confirmed, paid, completed, canceled, refunded]
+                reason:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        200:
+          description: Status updated successfully
+
+  /api/v1/invoices/{id}/payment:
+    post:
+      summary: Confirm payment
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: number
+                transactionId:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        200:
+          description: Payment confirmed successfully
+
+  /api/v1/invoices/statistics:
+    get:
+      summary: Get invoice statistics
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [daily, monthly, payment_methods, products]
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          description: Success
+
+  /api/v1/invoices/customer/{customerId}:
+    get:
+      summary: Get customer invoices
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        200:
+          description: Success
+
+  /api/v1/invoices/{id}/print:
+    get:
+      summary: Get printable invoice
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [pdf, html]
+            default: pdf
+      responses:
+        200:
+          description: Success
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/html:
+              schema:
+                type: string
+
+  /api/v1/invoices/batch:
+    post:
+      summary: Create multiple invoices
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - invoices
+              properties:
+                invoices:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Invoice'
+      responses:
+        201:
+          description: Invoices created successfully
+
+  /api/v1/invoices/statistics/advanced:
+    get:
+      summary: Get advanced invoice statistics
+      tags: [Invoices]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: groupBy
+          schema:
+            type: string
+            enum: [day, week, month, quarter, year]
+        - in: query
+          name: metrics
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [count, revenue, profit, average]
+        - in: query
+          name: paymentMethod
+          schema:
+            type: string
+            enum: [cash, bank_transfer]
+      responses:
+        200:
+          description: Success

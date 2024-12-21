@@ -1,0 +1,311 @@
+openapi: 3.0.0
+info:
+  title: Product Discount API
+  description: API for managing product discounts
+  version: 1.0.0
+tags:
+  - name: ProductDiscounts
+    description: Product discount management endpoints
+
+components:
+  schemas:
+    ProductDiscount:
+      type: object
+      required:
+        - name
+        - code
+        - type
+        - value
+        - startDate
+      properties:
+        name:
+          type: string
+          example: "Summer Sale"
+        code:
+          type: string
+          example: "SUMMER2024"
+        description:
+          type: string
+          example: "Summer sale discount for electronics"
+        type:
+          type: string
+          enum: [percentage, fixed]
+          example: "percentage"
+        value:
+          type: number
+          example: 10
+          description: Percentage or fixed amount
+        applicableProducts:
+          type: array
+          items:
+            type: string
+          description: Array of product IDs. Empty means applicable to all products
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        usageLimit:
+          type: integer
+          minimum: 1
+          example: 100
+          nullable: true
+        usedCount:
+          type: integer
+          minimum: 0
+          default: 0
+          readOnly: true
+        priority:
+          type: integer
+          minimum: 0
+          default: 0
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        statusText:
+          type: string
+          enum: [active, inactive]
+          readOnly: true
+        isActive:
+          type: boolean
+          readOnly: true
+        remainingUses:
+          type: integer
+          nullable: true
+          readOnly: true
+        createdBy:
+          type: string
+          description: Reference to User ID
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+paths:
+  /api/v1/product-discounts:
+    get:
+      summary: Get all product discounts
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Results per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in name, code, or description
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: Filter by status
+        - in: query
+          name: product
+          schema:
+            type: string
+          description: Filter by applicable product ID
+        - in: query
+          name: isActive
+          schema:
+            type: boolean
+          description: Filter active/inactive discounts
+        - in: query
+          name: autoApply
+          schema:
+            type: boolean
+          description: Filter auto-apply discounts
+        - in: query
+          name: sort
+          schema:
+            type: string
+          description: Sort field (prefix with - for DESC)
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductDiscount'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  pages:
+                    type: integer
+
+    post:
+      summary: Create new product discount (Admin)
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDiscount'
+      responses:
+        201:
+          description: Created successfully
+        400:
+          description: Validation error
+        401:
+          description: Not authenticated
+        403:
+          description: Not authorized
+
+  /api/v1/product-discounts/{id}:
+    get:
+      summary: Get product discount by ID
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDiscount'
+        404:
+          description: Discount not found
+
+    put:
+      summary: Update product discount (Admin)
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDiscount'
+      responses:
+        200:
+          description: Updated successfully
+        400:
+          description: Validation error
+        404:
+          description: Discount not found
+
+    delete:
+      summary: Delete product discount (Admin)
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Deleted successfully
+        400:
+          description: Cannot delete used discount
+        404:
+          description: Discount not found
+
+  /api/v1/product-discounts/{id}/status:
+    patch:
+      summary: Update product discount status (Admin)
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status value
+        404:
+          description: Discount not found
+
+  /api/v1/product-discounts/products/{productId}/applicable:
+    get:
+      summary: Get applicable discounts for a product
+      tags: [ProductDiscounts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: autoApplyOnly
+          schema:
+            type: boolean
+            default: false
+          description: Only get auto-apply discounts
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductDiscount'
+        404:
+          description: Product not found

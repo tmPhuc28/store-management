@@ -1,0 +1,712 @@
+openapi: 3.0.0
+info:
+  title: Store Management API
+  version: 1.0.0
+  description: API documentation for the Store Management system
+tags:
+  - name: Products
+    description: Product management endpoints
+
+components:
+  schemas:
+    VariantOption:
+      type: object
+      required:
+        - name
+        - values
+      properties:
+        name:
+          type: string
+          example: "Color"
+        values:
+          type: array
+          items:
+            type: string
+          example: ["Black", "White", "Blue"]
+          
+    ProductLocation:
+      type: object
+      required:
+        - product
+        - zone
+        - quantity
+      properties:
+        product:
+          type: string
+          description: Reference to Product ID
+        zone:
+          type: object
+          required:
+            - warehouse
+            - area
+            - rack
+          properties:
+            warehouse:
+              type: string
+              example: "WH1"
+            area:
+              type: string
+              example: "A1"
+            rack:
+              type: string
+              example: "R1"
+            shelf:
+              type: string
+              example: "S1"
+            bin:
+              type: string
+              example: "B1"
+        quantity:
+          type: integer
+          minimum: 0
+          example: 100
+        maxQuantity:
+          type: integer
+          minimum: 0
+          example: 500
+          nullable: true
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        notes:
+          type: string
+          example: "Main storage location for this product"
+        locationCode:
+          type: string
+          readOnly: true
+          example: "WH1-A1-R1-S1-B1"
+        availableSpace:
+          type: integer
+          readOnly: true
+          example: 400
+          nullable: true
+
+    Image:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          example: "https://example.com/image.jpg"
+        isThumbnail:
+          type: boolean
+          default: false
+        order:
+          type: integer
+          minimum: 0
+          default: 0
+
+    Warranty:
+      type: object
+      properties:
+        duration:
+          type: integer
+          minimum: 0
+          example: 12
+        unit:
+          type: string
+          enum: [days, months, years]
+          example: "months"
+        description:
+          type: string
+          example: "Standard manufacturer warranty"
+
+    Product:
+      type: object
+      required:
+        - name
+        - code
+        - sku
+        - category
+        - importPrice
+        - sellingPrice
+      properties:
+        name:
+          type: string
+          example: "iPhone 14 Pro"
+        code:
+          type: string
+          example: "IP14PRO"
+        sku:
+          type: string
+          example: "IP14PRO-256-BLACK"
+        description:
+          type: string
+          example: "Latest iPhone with dynamic island feature"
+        category:
+          type: string
+          description: Reference to Category ID
+        manufacturer:
+          type: string
+          description: Reference to Manufacturer ID
+          nullable: true
+        supplier:
+          type: string
+          description: Reference to Supplier ID
+          nullable: true
+        importPrice:
+          type: number
+          minimum: 0
+          example: 800
+        sellingPrice:
+          type: number
+          minimum: 0
+          example: 999.99
+        currentPrice:
+          type: number
+          example: 899.99
+          readOnly: true
+        quantity:
+          type: number
+          minimum: 0
+          default: 0
+          example: 100
+        discount:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "SUMMER2024"
+            type:
+              type: string
+              enum: [percentage, fixed]
+            value:
+              type: number
+              example: 10
+            startDate:
+              type: string
+              format: date-time
+            endDate:
+              type: string
+              format: date-time
+              nullable: true
+            amount:
+              type: number
+              example: 99.99
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+
+paths:
+  /api/v1/products:
+    get:
+      summary: Get all products
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Results per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in name, code, sku, or description
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: Filter by status
+        - in: query
+          name: category
+          schema:
+            type: string
+          description: Filter by category
+        - in: query
+          name: manufacturer
+          schema:
+            type: string
+          description: Filter by manufacturer
+        - in: query
+          name: supplier
+          schema:
+            type: string
+          description: Filter by supplier
+        - in: query
+          name: minPrice
+          schema:
+            type: number
+          description: Minimum current price
+        - in: query
+          name: maxPrice
+          schema:
+            type: number
+          description: Maximum current price
+        - in: query
+          name: hasStock
+          schema:
+            type: boolean
+          description: Filter products with stock
+        - in: query
+          name: hasDiscount
+          schema:
+            type: boolean
+          description: Filter products with active discount
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  pages:
+                    type: integer
+
+    post:
+      summary: Create new product (Admin)
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+      responses:
+        201:
+          description: Created successfully
+        400:
+          description: Validation error
+        401:
+          description: Not authenticated
+        403:
+          description: Not authorized
+
+  /api/v1/products/{id}:
+    get:
+      summary: Get product by ID
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        404:
+          description: Product not found
+
+    put:
+      summary: Update product (Admin)
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+      responses:
+        200:
+          description: Updated successfully
+        400:
+          description: Validation error
+        404:
+          description: Product not found
+
+    delete:
+      summary: Delete product (Admin)
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Deleted successfully
+        400:
+          description: Cannot delete product
+        404:
+          description: Product not found
+
+  /api/v1/products/{id}/status:
+    patch:
+      summary: Update product status (Admin)
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status value
+        404:
+          description: Product not found
+
+  /api/v1/products/{id}/discounts:
+    post:
+      summary: Apply discount code to product
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+      responses:
+        200:
+          description: Discount applied successfully
+        400:
+          description: Invalid request or discount cannot be applied
+        404:
+          description: Product or discount not found
+
+    delete:
+      summary: Remove discount from product
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Discount removed successfully
+        400:
+          description: Product has no active discount
+        404:
+          description: Product not found
+
+  /api/v1/products/{id}/discontinue:
+    post:
+      summary: Discontinue product (Admin)
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                effectiveDate:
+                  type: string
+                  format: date-time
+      responses:
+        200:
+          description: Product discontinued successfully
+        400:
+          description: Invalid request data
+        404:
+          description: Product not found
+
+  /api/v1/products/{id}/prices:
+    patch:
+      summary: Update product prices
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - importPrice
+                - sellingPrice
+              properties:
+                importPrice:
+                  type: number
+                  minimum: 0
+                sellingPrice:
+                  type: number
+                  minimum: 0
+      responses:
+        200:
+          description: Prices updated successfully
+
+  /api/v1/products/{id}/quantity:
+    patch:
+      summary: Update product quantity
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - quantity
+              properties:
+                quantity:
+                  type: number
+                  minimum: 0
+      responses:
+        200:
+          description: Quantity updated successfully
+
+  /api/v1/products/{id}/quantity/adjust:
+    post:
+      summary: Adjust product quantity (Admin)
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - adjustment
+                - reason
+              properties:
+                adjustment:
+                  type: integer
+                  description: Can be positive or negative
+                reason:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        200:
+          description: Quantity adjusted successfully
+        400:
+          description: Invalid adjustment
+        404:
+          description: Product not found
+
+  /api/v1/products/{id}/locations:
+    get:
+      summary: Get product locations summary
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalLocations:
+                    type: integer
+                  activeLocations:
+                    type: integer
+                  totalQuantity:
+                    type: integer
+                  availableLocations:
+                    type: integer
+                  locations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProductLocation"
+        404:
+          description: Product not found
+
+  /api/v1/products/{id}/history:
+    get:
+      summary: Get product update history
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [timestamp, -timestamp]
+            default: -timestamp
+          description: Sort by timestamp
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            updatedBy:
+                              type: object
+                              properties:
+                                _id:
+                                  type: string
+                                username:
+                                  type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                            changes:
+                              type: object
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+        404:
+          description: Product not found
+
+    delete:
+      summary: Clear all history
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: History cleared successfully
+        404:
+          description: Product not found

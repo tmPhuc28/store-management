@@ -1,88 +1,86 @@
 // src/controllers/store.controller.js
-const { validationResult } = require("express-validator");
+const BaseController = require("./base/base.controller");
 const StoreService = require("../services/store.service");
+const ResponseHandler = require("../utils/responseHandler");
 
-class StoreController {
+class StoreController extends BaseController {
   constructor() {
-    this.storeService = new StoreService();
+    super(StoreService);
   }
 
-  getStore = async (req, res, next) => {
+  /**
+   * @desc    Get store information
+   * @route   GET /api/v2/store
+   */
+  getStore = async (req, res) => {
     try {
-      const store = await this.storeService.getStoreInfo();
+      const store = await this.service.getStoreInfo();
 
-      res.status(200).json({
-        success: true,
-        data: store,
-      });
+      const response = ResponseHandler.success(store);
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Store information not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  updateStore = async (req, res, next) => {
+  /**
+   * @desc    Update store information
+   * @route   PUT /api/v2/store
+   */
+  updateStore = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      this.validateRequest(req);
 
-      const store = await this.storeService.updateStore(req.body, req.user);
+      const store = await this.service.updateStore(req.body, req.user);
 
-      res.status(200).json({
-        success: true,
-        data: store,
-        message: "Store information updated successfully",
-      });
+      const response = ResponseHandler.success(
+        store,
+        "Store information updated successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  getStoreBankInfo = async (req, res, next) => {
+  /**
+   * @desc    Get store bank information
+   * @route   GET /api/v2/store/bank-info
+   */
+  getStoreBankInfo = async (req, res) => {
     try {
-      const bankInfo = await this.storeService.getStoreBankInfo();
+      const bankInfo = await this.service.getStoreBankInfo();
 
-      res.status(200).json({
-        success: true,
-        data: bankInfo,
-      });
+      const response = ResponseHandler.success(bankInfo);
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Store bank information not configured") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 
-  updateBankInfo = async (req, res, next) => {
+  /**
+   * @desc    Update store bank information
+   * @route   PUT /api/v2/store/bank-info
+   */
+  updateBankInfo = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
+      this.validateRequest(req);
 
-      const store = await this.storeService.updateBankInfo(req.body, req.user);
-      res.status(200).json({
-        success: true,
-        data: store.bankInfo,
-      });
+      const bankInfo = await this.service.updateBankInfo(req.body, req.user);
+
+      const response = ResponseHandler.success(
+        bankInfo,
+        "Bank information updated successfully"
+      );
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
   };
 }
 
-module.exports = new StoreController();
+module.exports = StoreController;

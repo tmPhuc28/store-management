@@ -1,62 +1,86 @@
-// src/models/Product.js
 const mongoose = require("mongoose");
+
+const variantOptionSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    values: [
+      {
+        type: String,
+        required: true,
+        trim: true,
+      },
+    ],
+  },
+  { _id: false }
+);
+
+const discountSchema = new mongoose.Schema(
+  {
+    code: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    type: {
+      type: String,
+      required: true,
+      enum: ["percentage", "fixed"],
+    },
+    value: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    startDate: {
+      type: Date,
+      required: true,
+    },
+    endDate: {
+      type: Date,
+      default: null,
+    },
+    amount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
 
 const productSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Please add a product name"],
+      required: [true, "Product name is required"],
       trim: true,
       maxlength: [100, "Name cannot be more than 100 characters"],
     },
+    code: {
+      type: String,
+      required: [true, "Product code is required"],
+      unique: true,
+      trim: true,
+      uppercase: true,
+      maxlength: [20, "Code cannot be more than 20 characters"],
+    },
     sku: {
       type: String,
-      required: true,
+      required: [true, "SKU is required"],
       unique: true,
+      trim: true,
+      uppercase: true,
+      maxlength: [50, "SKU cannot be more than 50 characters"],
     },
     description: {
       type: String,
-      required: [true, "Please add a description"],
-    },
-    price: {
-      type: Number,
-      required: [true, "Please add a price"],
-      min: [0, "Price must be greater than 0"],
-    },
-    discount: {
-      percentage: {
-        type: Number,
-        default: 0,
-        min: [0, "Discount cannot be negative"],
-        max: [100, "Discount cannot exceed 100%"],
-      },
-      startDate: {
-        type: Date,
-      },
-      endDate: {
-        type: Date,
-      },
-      isActive: {
-        type: Boolean,
-        default: false,
-      },
-    },
-
-    finalPrice: {
-      type: Number,
-      required: true,
-      default: function () {
-        if (this.discount && this.discount.isActive) {
-          const now = new Date();
-          if (
-            (!this.discount.startDate || now >= this.discount.startDate) &&
-            (!this.discount.endDate || now <= this.discount.endDate)
-          ) {
-            return this.price * (1 - this.discount.percentage / 100);
-          }
-        }
-        return this.price;
-      },
+      default: null,
+      trim: true,
+      maxlength: [2000, "Description cannot be more than 2000 characters"],
     },
     category: {
       type: mongoose.Schema.Types.ObjectId,
@@ -69,57 +93,144 @@ const productSchema = new mongoose.Schema(
         ref: "Category",
       },
     ],
-    quantity: {
-      type: Number,
-      required: [true, "Please add a quantity"],
-      min: [0, "Quantity cannot be negative"],
-    },
-    variants: [
-      {
-        name: String,
-        options: [String],
-      },
-    ],
     manufacturer: {
-      type: String,
-      required: false,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Manufacturer",
+      default: null,
     },
     supplier: {
-      type: String,
-      required: false,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Supplier",
+      default: null,
     },
-    barcode: String,
-    qrCode: String,
+    basePrice: {
+      type: Number,
+      required: [true, "Base price is required"],
+      min: [0, "Price cannot be negative"],
+    },
+    discount: {
+      type: discountSchema,
+      default: null,
+    },
+    importPrice: {
+      type: Number,
+      required: [true, "Import price is required"],
+      min: [0, "Import price cannot be negative"],
+    },
+    sellingPrice: {
+      type: Number,
+      required: [true, "Selling price is required"],
+      min: [0, "Selling price cannot be negative"],
+      validate: {
+        validator: function (value) {
+          return value >= this.importPrice;
+        },
+        message: "Selling price must be greater than or equal to import price",
+      },
+    },
+    currentPrice: {
+      type: Number,
+      required: true,
+      min: [0, "Price cannot be negative"],
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: [0, "Quantity cannot be negative"],
+    },
+    minQuantity: {
+      type: Number,
+      default: 0,
+      min: [0, "Minimum quantity cannot be negative"],
+    },
+    maxQuantity: {
+      type: Number,
+      default: null,
+      validate: {
+        validator: function (value) {
+          return value === null || value >= this.minQuantity;
+        },
+        message: "Maximum quantity must be greater than minimum quantity",
+      },
+    },
+    unit: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "Cái",
+    },
+    variantOptions: [variantOptionSchema],
+    images: [
+      {
+        url: {
+          type: String,
+          required: true,
+        },
+        isThumbnail: {
+          type: Boolean,
+          default: false,
+        },
+        order: {
+          type: Number,
+          default: 0,
+        },
+      },
+    ],
+    barcode: {
+      type: String,
+      default: null,
+    },
+    qrCode: {
+      type: String,
+      default: null,
+    },
+    specifications: {
+      type: Map,
+      of: String,
+      default: new Map(),
+    },
+    warranty: {
+      duration: {
+        type: Number,
+        default: 0,
+      },
+      unit: {
+        type: String,
+        enum: ["days", "months", "years"],
+        default: "months",
+      },
+      description: {
+        type: String,
+        default: null,
+      },
+    },
     status: {
       type: Number,
-      enum: [0, 1], // 1: active, 0: inactive
+      enum: [0, 1], // 0: inactive, 1: active
       default: 1,
-      required: true,
+    },
+    isOutOfStock: {
+      type: Boolean,
+      default: false,
+    },
+    isDiscontinued: {
+      type: Boolean,
+      default: false,
+    },
+    discontinuedAt: {
+      type: Date,
+      default: null,
+    },
+    discontinuedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    },
-    images: [String],
-    stockAlert: {
-      enabled: {
-        type: Boolean,
-        default: true, // Mặc định bật cảnh báo
-      },
-      threshold: {
-        type: Number,
-        default: 10,
-        min: 0,
-      },
-      status: {
-        type: String,
-        enum: ["normal", "warning", "critical"],
-        default: "normal",
-      },
-      lastNotified: {
-        type: Date,
-      },
     },
     updateHistory: [
       {
@@ -143,105 +254,150 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Tự động cập nhật categoryPath khi category thay đổi
-productSchema.pre("save", async function (next) {
-  if (this.isModified("category")) {
-    try {
-      const Category = this.model("Category");
-      const categoryPath = [];
-      let currentCat = await Category.findById(this.category);
-
-      // Xây dựng đường dẫn từ category hiện tại lên đến root
-      while (currentCat) {
-        categoryPath.unshift(currentCat._id);
-        if (!currentCat.parentCategory) break;
-        currentCat = await Category.findById(currentCat.parentCategory);
-      }
-
-      this.categoryPath = categoryPath;
-    } catch (error) {
-      return next(error);
-    }
-  }
-  next();
-});
-
-// Phương thức kiểm tra và cập nhật trạng thái cảnh báo
-productSchema.methods.updateStockStatus = function () {
-  if (!this.stockAlert.enabled) {
-    this.stockAlert.status = "normal";
-    return null;
-  }
-
-  const stockPercentage = (this.quantity / this.stockAlert.threshold) * 100;
-
-  let status;
-  let alertType;
-  let message;
-
-  if (this.quantity <= 0) {
-    status = "critical";
-    alertType = "error";
-    message = `Out of stock: ${this.name}`;
-  } else if (this.quantity <= this.stockAlert.threshold / 2) {
-    status = "critical";
-    alertType = "error";
-    message = `Critical low stock: ${this.name} - Only ${this.quantity} items remaining`;
-  } else if (this.quantity <= this.stockAlert.threshold) {
-    status = "warning";
-    alertType = "warning";
-    message = `Low stock warning: ${this.name} - ${this.quantity} items remaining`;
-  } else {
-    status = "normal";
-    alertType = null;
-    message = null;
-  }
-
-  this.stockAlert.status = status;
-
-  if (status !== "normal") {
-    return {
-      productId: this._id,
-      name: this.name,
-      quantity: this.quantity,
-      threshold: this.stockAlert.threshold,
-      status,
-      alertType,
-      message,
-      timestamp: new Date(),
-    };
-  }
-
-  return null;
-};
-
-// Method để lấy thông tin đầy đủ về category path
-productSchema.methods.getFullCategoryInfo = async function () {
-  await this.populate("categoryPath", "name");
-  return this.categoryPath.map((cat) => cat.name).join(" > ");
-};
-
-// Thêm virtual field để kiểm tra trạng thái giảm giá
-productSchema.virtual("isDiscounted").get(function () {
-  if (this.discount && this.discount.isActive) {
-    const now = new Date();
-    return (
-      (!this.discount.startDate || now >= this.discount.startDate) &&
-      (!this.discount.endDate || now <= this.discount.endDate)
-    );
-  }
-  return false;
-});
-
-// Add virtual getter for status text
+// Virtuals
 productSchema.virtual("statusText").get(function () {
   return this.status === 1 ? "active" : "inactive";
 });
 
-// Add indexes
-productSchema.index({ name: "text", description: "text", sku: "text" });
-productSchema.index({ category: 1 });
-productSchema.index({ status: 1 });
+productSchema.virtual("thumbnail").get(function () {
+  const thumbnail = this.images?.find((img) => img.isThumbnail);
+  return thumbnail?.url || this.images?.[0]?.url || null;
+});
+
+productSchema.virtual("discountPercentage").get(function () {
+  if (!this.discount?.discountId) return 0;
+  if (this.discount.type !== "percentage") return 0;
+
+  const now = new Date();
+  if (now < this.discount.startDate) return 0;
+  if (this.discount.endDate && now > this.discount.endDate) return 0;
+
+  return this.discount.value;
+});
+
+productSchema.virtual("locations", {
+  ref: "ProductLocation",
+  localField: "_id",
+  foreignField: "product",
+});
+
+// Middleware để tự động cập nhật currentPrice khi có thay đổi
+productSchema.pre("save", function (next) {
+  if (this.isModified("sellingPrice") || this.isModified("discount")) {
+    this.currentPrice = this.calculateCurrentPrice();
+  }
+  next();
+});
+
+// Method để tính giá hiện tại dựa trên giảm giá
+productSchema.methods.calculateCurrentPrice = function () {
+  if (!this.discount) return this.sellingPrice;
+
+  const now = new Date();
+  if (now < this.discount.startDate) return this.sellingPrice;
+  if (this.discount.endDate && now > this.discount.endDate)
+    return this.sellingPrice;
+
+  if (this.discount.type === "percentage") {
+    const discountAmount = (this.sellingPrice * this.discount.value) / 100;
+    return this.sellingPrice - discountAmount;
+  }
+  return this.sellingPrice - this.discount.value;
+};
+
+// Method để cập nhật số lượng từ locations
+productSchema.methods.updateQuantityFromLocations = async function () {
+  const locations = await mongoose.model("ProductLocation").find({
+    product: this._id,
+    status: 1,
+  });
+
+  this.quantity = locations.reduce((sum, loc) => sum + loc.quantity, 0);
+  this.isOutOfStock = this.quantity <= 0;
+
+  await this.save();
+};
+
+// Method để áp dụng mã giảm giá
+productSchema.methods.applyDiscountCode = async function (code) {
+  const ProductDiscount = mongoose.model("ProductDiscount");
+  const discount = await ProductDiscount.findOne({
+    code: code.toUpperCase(),
+    status: 1,
+    startDate: { $lte: new Date() },
+    $or: [{ endDate: null }, { endDate: { $gt: new Date() } }],
+  });
+
+  if (!discount) throw new Error("Invalid or expired discount code");
+
+  if (
+    discount.applicableProducts.length > 0 &&
+    !discount.applicableProducts.includes(this._id)
+  ) {
+    throw new Error("Discount not applicable for this product");
+  }
+
+  this.discount = {
+    code: discount.code,
+    type: discount.type,
+    value: discount.value,
+    startDate: discount.startDate,
+    endDate: discount.endDate,
+    amount: this.calculateDiscountAmount(discount),
+  };
+
+  this.currentPrice = this.calculateCurrentPrice();
+  await this.save();
+};
+
+// Method để xóa discount
+productSchema.methods.removeDiscount = async function (userId) {
+  const oldPrice = this.currentPrice;
+
+  this.discount = null;
+  this.currentPrice = this.basePrice;
+
+  // Ghi lại trong history
+  this.updateHistory.push({
+    action: "remove_discount",
+    updatedBy: userId,
+    timestamp: new Date(),
+    changes: {
+      oldPrice,
+      newPrice: this.currentPrice,
+    },
+  });
+
+  await this.save();
+};
+
+// Method để tính toán số tiền giảm giá
+productSchema.methods.calculateDiscountAmount = function (discount) {
+  if (discount.type === "percentage") {
+    const amount = (this.sellingPrice * discount.value) / 100;
+    return discount.maxDiscount
+      ? Math.min(amount, discount.maxDiscount)
+      : amount;
+  }
+  return Math.min(discount.value, this.sellingPrice);
+};
+
+// Indexes
+productSchema.index({
+  name: "text",
+  code: "text",
+  sku: "text",
+  description: "text",
+});
+productSchema.index({ code: 1 }, { unique: true });
 productSchema.index({ sku: 1 }, { unique: true });
+productSchema.index({ category: 1 });
+productSchema.index({ manufacturer: 1 });
+productSchema.index({ supplier: 1 });
+productSchema.index({ status: 1 });
+productSchema.index({ isOutOfStock: 1 });
+productSchema.index({ isDiscontinued: 1 });
+productSchema.index({ categoryPath: 1 });
+productSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Product", productSchema);

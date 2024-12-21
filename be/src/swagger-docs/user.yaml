@@ -1,0 +1,495 @@
+# src/swagger/user.yaml
+openapi: 3.0.0
+info:
+  title: User Management API
+  description: API documentation for user management endpoints
+  version: 1.0.0
+tags:
+  - name: Users
+    description: User management endpoints
+
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - username
+        - email
+        - password
+        - employee
+      properties:
+        username:
+          type: string
+          example: "john_doe"
+          minLength: 3
+          pattern: ^[a-zA-Z0-9_]+$
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 6
+        role:
+          type: integer
+          enum: [0, 1]
+          default: 0
+          description: "0=user, 1=admin"
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        employee:
+          type: string
+          description: Employee reference ID
+        lastLogin:
+          type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+            ipAddress:
+              type: string
+            userAgent:
+              type: string
+        roleText:
+          type: string
+          enum: [user, admin]
+          readOnly: true
+        statusText:
+          type: string
+          enum: [active, inactive]
+          readOnly: true
+        hasActiveSessions:
+          type: boolean
+          readOnly: true
+        lastLoginAgo:
+          type: string
+          readOnly: true
+
+    UserHistory:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [create, update, status_change, password_change, role_change]
+        updatedBy:
+          type: object
+          properties:
+            _id:
+              type: string
+            username:
+              type: string
+            email:
+              type: string
+        timestamp:
+          type: string
+          format: date-time
+        changes:
+          type: object
+        metadata:
+          type: object
+          properties:
+            ipAddress:
+              type: string
+            userAgent:
+              type: string
+
+paths:
+  /api/v1/users:
+    get:
+      summary: Get all users (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in username or email
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+        - in: query
+          name: role
+          schema:
+            type: integer
+            enum: [0, 1]
+        - in: query
+          name: employee
+          schema:
+            type: string
+          description: Filter by employee ID
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: lastLoginStart
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: lastLoginEnd
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: sortBy
+          schema:
+            type: string
+          example: "-createdAt"
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  pages:
+                    type: integer
+        401:
+          description: Not authenticated
+        403:
+          description: Not authorized
+
+  /api/v1/users/{id}:
+    get:
+      summary: Get user by ID (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        404:
+          description: User not found
+
+    put:
+      summary: Update user (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  pattern: ^[a-zA-Z0-9_]+$
+                  description: Unique username, alphanumeric with underscore only
+                email:
+                  type: string
+                  format: email
+                  description: Must be a valid and unique email address
+                role:
+                  type: integer
+                  enum: [0, 1]
+                  description: "0=user, 1=admin"
+                employee:
+                  type: string
+                  description: Employee reference ID (MongoDB ObjectId)
+              example:
+                username: "john_doe"
+                email: "john.doe@example.com"
+                role: 0
+                employee: "60d6ec9f1233d62b9cef4567"
+      responses:
+        200:
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+        400:
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Validation failed"
+                  details:
+                    type: object
+                    example:
+                      username: "Username must be at least 3 characters"
+        404:
+          description: User not found
+        409:
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Username or email already exists"
+
+    delete:
+      summary: Delete user (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: User deleted successfully
+        400:
+          description: Cannot delete user
+        404:
+          description: User not found
+
+  /api/v1/users/{id}/status:
+    patch:
+      summary: Update user status (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status value
+        404:
+          description: User not found
+
+  /api/v1/users/{id}/logout:
+    post:
+      summary: Force logout user from all devices (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: User logged out successfully
+        404:
+          description: User not found
+
+  /api/v1/users/{id}/history/{historyId}:
+    delete:
+      summary: Delete specific history entry
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: User ID
+        - in: path
+          name: historyId
+          required: true
+          schema:
+            type: string
+          description: History entry ID
+      responses:
+        200:
+          description: History entry deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    description: Updated history array after deletion
+                    items:
+                      $ref: '#/components/schemas/UserHistory'
+        404:
+          description: User or history entry not found
+        403:
+          description: Not authorized to delete history
+        401:
+          description: Not authenticated
+
+  /api/v1/users/{id}/history:
+    get:
+      summary: Get user history (Admin)
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      history:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UserHistory'
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+        404:
+          description: User not found
+
+    delete:
+      summary: Clear all history for an User
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: User ID
+      responses:
+        200:
+          description: History cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    description: New history array with clear record
+                    items:
+                      $ref: '#/components/schemas/UserHistory'
+        404:
+          description: User not found
+        403:
+          description: Not authorized to clear history
+        401:
+          description: Not authenticated

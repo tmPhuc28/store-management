@@ -1,213 +1,88 @@
 // src/controllers/customer.controller.js
-const { validationResult } = require("express-validator");
-const customerService = require("../services/customer.service");
+const BaseController = require("./base/base.controller");
+const CustomerService = require("../services/customer.service");
+const ResponseHandler = require("../utils/responseHandler");
 
-class CustomerController {
-  async getCustomers(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const result = await customerService.getCustomers(req.query, req.user);
-      res.status(200).json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      next(error);
-    }
+class CustomerController extends BaseController {
+  constructor() {
+    super(CustomerService);
   }
 
-  async getCustomer(req, res, next) {
+  /**
+   * Get customer statistics
+   */
+  getStatistics = async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
+      this.validateRequest(req);
 
-      const customer = await customerService.getCustomerById(
-        req.params.id,
-        req.user
+      const stats = await this.service.getCustomerStatistics(req.params.id);
+
+      const response = ResponseHandler.success(stats);
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * Get customer purchase history
+   */
+  getPurchaseHistory = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const { id } = req.params;
+      const { page = 1, limit = 10 } = req.query;
+
+      const customer = await this.service.findById(id, {
+        populate: {
+          path: "purchaseHistory",
+          options: {
+            sort: { createdAt: -1 },
+            skip: (page - 1) * limit,
+            limit: parseInt(limit),
+            populate: [{ path: "items.product", select: "name price" }],
+          },
+        },
+      });
+
+      const response = ResponseHandler.success({
+        history: customer.purchaseHistory,
+        stats: {
+          totalPurchases: customer.totalPurchases,
+          totalSpent: customer.totalSpent,
+          averageOrderValue: customer.averageOrderValue,
+          lastPurchaseDate: customer.lastPurchaseDate,
+        },
+      });
+      res.status(response.statusCode).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
+
+  /**
+   * Update customer purchase stats manually
+   */
+  updateStats = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const customer = await this.service.findById(req.params.id);
+      await customer.updatePurchaseStats();
+
+      const response = ResponseHandler.success(
+        customer,
+        "Customer stats updated successfully"
       );
-
-      res.status(200).json({
-        success: true,
-        data: customer,
-      });
+      res.status(response.statusCode).json(response.body);
     } catch (error) {
-      if (error.message === "Customer not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
     }
-  }
-
-  async createCustomer(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const customer = await customerService.create(req.body, req.user);
-
-      res.status(201).json({
-        success: true,
-        data: customer,
-      });
-    } catch (error) {
-      if (error.message.includes("already registered")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateCustomer(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const customer = await customerService.update(
-        req.params.id,
-        req.body,
-        req.user
-      );
-
-      res.status(200).json({
-        success: true,
-        data: customer,
-      });
-    } catch (error) {
-      if (error.message === "Customer not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (error.message.includes("already registered")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateCustomerStatus(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const customer = await customerService.updateStatus(
-        req.params.id,
-        parseInt(req.body.status),
-        req.user
-      );
-
-      res.status(200).json({
-        success: true,
-        data: customer,
-      });
-    } catch (error) {
-      if (error.message === "Customer not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (error.message.includes("Status must be")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async deleteCustomer(req, res, next) {
-    try {
-      await customerService.delete(req.params.id, req.user);
-
-      res.status(200).json({
-        success: true,
-        message: "Customer deleted successfully",
-      });
-    } catch (error) {
-      if (error.message === "Customer not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      if (error.message.includes("Cannot delete customer")) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
-
-  async getCustomerStatistics(req, res, next) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          errors: errors.array(),
-        });
-      }
-
-      const stats = await customerService.getCustomerStatistics(
-        req.params.id,
-        req.user
-      );
-
-      res.status(200).json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      if (error.message === "Customer not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-      next(error);
-    }
-  }
+  };
 }
 
-module.exports = new CustomerController();
+module.exports = CustomerController;

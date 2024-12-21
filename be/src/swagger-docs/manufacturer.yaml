@@ -1,0 +1,399 @@
+openapi: 3.0.0
+info:
+  title: Manufacturer API
+  description: API documentation for Manufacturer management
+  version: 1.0.0
+tags:
+  - name: Manufacturers
+    description: Manufacturer management endpoints
+
+components:
+  schemas:
+    Address:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "123 Main Street"
+        ward:
+          type: string
+          example: "Ward 1"
+        district:
+          type: string
+          example: "District 1"
+        province:
+          type: string
+          example: "Ho Chi Minh City"
+
+    Contact:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        phone:
+          type: string
+          example: "0123456789"
+        position:
+          type: string
+          example: "Sales Manager"
+
+    Manufacturer:
+      type: object
+      required:
+        - name
+        - code
+      properties:
+        name:
+          type: string
+          example: "Sony Corporation"
+        code:
+          type: string
+          example: "SONY"
+        description:
+          type: string
+          example: "Japanese multinational conglomerate corporation"
+        phone:
+          type: string
+          example: "0283123456"
+        email:
+          type: string
+          format: email
+          example: "contact@sony.com"
+        website:
+          type: string
+          format: url
+          example: "https://www.sony.com"
+        taxCode:
+          type: string
+          example: "0123456789"
+        address:
+          $ref: '#/components/schemas/Address'
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Contact'
+        logo:
+          type: string
+          format: url
+          example: "https://example.com/sony-logo.png"
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+          description: "0=inactive, 1=active"
+        createdBy:
+          type: string
+          description: Reference to User
+        statusText:
+          type: string
+          enum: [active, inactive]
+          readOnly: true
+        fullAddress:
+          type: string
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+paths:
+  /api/v1/manufacturers:
+    get:
+      summary: Get all manufacturers
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Results per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in name, code, phone, or email
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: Filter by status
+        - in: query
+          name: sort
+          schema:
+            type: string
+          description: Sort field (prefix with - for DESC)
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Manufacturer'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  pages:
+                    type: integer
+
+    post:
+      summary: Create new manufacturer (Admin)
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Manufacturer'
+      responses:
+        201:
+          description: Created successfully
+        400:
+          description: Validation error
+        401:
+          description: Not authenticated
+        403:
+          description: Not authorized
+
+  /api/v1/manufacturers/{id}:
+    get:
+      summary: Get manufacturer by ID
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Manufacturer'
+        404:
+          description: Manufacturer not found
+
+    put:
+      summary: Update manufacturer (Admin)
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Manufacturer'
+      responses:
+        200:
+          description: Updated successfully
+        400:
+          description: Validation error
+        404:
+          description: Manufacturer not found
+
+    delete:
+      summary: Delete manufacturer (Admin)
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Deleted successfully
+        400:
+          description: Cannot delete manufacturer with products
+        404:
+          description: Manufacturer not found
+
+  /api/v1/manufacturers/{id}/status:
+    patch:
+      summary: Update manufacturer status (Admin)
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        200:
+          description: Status updated successfully
+        400:
+          description: Invalid status value
+        404:
+          description: Manufacturer not found
+
+  /api/v1/manufacturers/{id}/history:
+    get:
+      summary: Get manufacturer update history
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [timestamp, -timestamp]
+            default: -timestamp
+          description: Sort by timestamp
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            updatedBy:
+                              type: object
+                              properties:
+                                _id:
+                                  type: string
+                                username:
+                                  type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                            changes:
+                              type: object
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+        404:
+          description: Manufacturer not found
+
+    delete:
+      summary: Clear all history for a manufacturer
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: History cleared successfully
+        404:
+          description: Manufacturer not found
+
+  /api/v1/manufacturers/{id}/history/{historyId}:
+    delete:
+      summary: Delete specific history entry
+      tags: [Manufacturers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: historyId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: History entry deleted successfully
+        404:
+          description: Manufacturer or history entry not found
