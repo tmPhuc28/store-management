@@ -192,7 +192,7 @@ manufacturerSchema.pre("save", function (next) {
 
 // Indexes
 manufacturerSchema.index({ name: "text", code: "text" });
-manufacturerSchema.index({ code: 1 }, { unique: true });
+//manufacturerSchema.index({ code: 1 }, { unique: true });
 manufacturerSchema.index({ status: 1 });
 manufacturerSchema.index({ createdAt: -1 });
 

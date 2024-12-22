@@ -47,7 +47,9 @@ const setNewCookies = (res, { accessToken, refreshToken }) => {
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.COOKIE_SAME_SITE || "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    path: "/",
+    domain: process.env.COOKIE_DOMAIN || undefined,
   };
 
   res.cookie("accessToken", accessToken, {
@@ -61,115 +63,111 @@ const setNewCookies = (res, { accessToken, refreshToken }) => {
       maxAge: Number(process.env.JWT_REFRESH_COOKIE_EXPIRE) * 60 * 1000,
     });
   }
+  res.set("Authorization", `Bearer ${accessToken}`);
+  return {
+    accessToken,
+    refreshToken,
+  };
 };
+
+async function refreshUserTokens(refreshToken) {
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findById(decoded.id);
+
+    const tokenExists = user?.refreshTokens?.find(
+      (t) => t.token === refreshToken
+    );
+    if (!user || !tokenExists) {
+      return null;
+    }
+
+    // Generate new tokens
+    const accessToken = user.generateAuthToken();
+    const newRefreshToken = user.generateRefreshToken();
+
+    // Update refresh tokens
+    await user.removeRefreshToken(refreshToken);
+    await user.save();
+
+    return {
+      accessToken,
+      refreshToken: newRefreshToken,
+    };
+  } catch (error) {
+    return null;
+  }
+}
 
 /**
  * Authentication & Authorization Middleware
  */
 exports.protect = async (req, res, next) => {
   try {
-    // Get token
-    const token = getTokenFromRequest(req);
+    let token = getTokenFromRequest(req);
 
     if (!token) {
-      throw new Error("Not authorized to access this route");
+      // Thử refresh nếu không có access token nhưng có refresh token
+      const refreshToken = getRefreshTokenFromRequest(req);
+      if (refreshToken) {
+        const newTokens = await refreshUserTokens(refreshToken);
+        if (newTokens) {
+          // Set cookies mới
+          setNewCookies(res, newTokens);
+          token = newTokens.accessToken;
+        }
+      }
+
+      if (!token) {
+        throw new Error("Not authorized to access this route");
+      }
     }
 
     try {
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.id)
+        .select("+password")
+        .populate("employee", "firstName lastName");
 
-      // Get user
-      const user = await User.findById(decoded.id);
-
-      // Check if user exists and is active
       if (!user || user.status !== 1) {
         throw new Error("User not found or inactive");
       }
 
-      // Check if password was changed after token was issued
-      if (
-        user.hasPasswordChangedAfterToken &&
-        user.hasPasswordChangedAfterToken(decoded.iat)
-      ) {
-        throw new Error("User recently changed password. Please login again");
+      if (user.hasPasswordChangedAfterToken?.(decoded.iat)) {
+        throw new Error("Password changed. Please login again");
       }
 
-      // Add user to request
       req.user = user;
-
-      authLog.success("Authentication successful", {
-        userId: user._id,
-        route: req.originalUrl,
-      });
-
-      next();
+      return next();
     } catch (error) {
-      // If token expired, try to refresh
       if (error.name === "TokenExpiredError") {
+        // Thử refresh token
         const refreshToken = getRefreshTokenFromRequest(req);
-
         if (!refreshToken) {
-          throw new Error("Access token expired. Please login again");
-        }
-
-        try {
-          // Verify refresh token
-          const decoded = jwt.verify(
-            refreshToken,
-            process.env.JWT_REFRESH_SECRET
-          );
-
-          // Get user and check refresh token exists
-          const user = await User.findById(decoded.id);
-          const tokenExists = user.refreshTokens.find(
-            (t) => t.token === refreshToken
-          );
-
-          if (!user || !tokenExists) {
-            throw new Error("Invalid refresh token");
-          }
-
-          // Generate new tokens
-          const accessToken = user.generateAuthToken();
-          const newRefreshToken = user.generateRefreshToken();
-
-          // Remove old refresh token
-          await user.removeRefreshToken(refreshToken);
-          await user.save();
-
-          // Set new cookies
-          setNewCookies(res, {
-            accessToken,
-            refreshToken: newRefreshToken,
-          });
-
-          // Add user to request
-          req.user = user;
-
-          authLog.success("Token refreshed successfully", {
-            userId: user._id,
-            route: req.originalUrl,
-          });
-
-          next();
-        } catch (refreshError) {
           throw new Error("Session expired. Please login again");
         }
-      } else {
-        throw error;
+
+        const newTokens = await refreshUserTokens(refreshToken);
+        if (!newTokens) {
+          throw new Error("Invalid refresh token");
+        }
+
+        // Set cookies mới và retry request
+        setNewCookies(res, newTokens);
+        req.cookies.accessToken = newTokens.accessToken;
+        return exports.protect(req, res, next);
       }
+      throw error;
     }
   } catch (error) {
     authLog.error("Authentication failed", {
       message: error?.message || "Authentication error",
       route: req.originalUrl,
-      ip: req.ip,
     });
 
-    res.status(401).json({
+    return res.status(401).json({
       success: false,
-      message: error?.message || "Not authorized to access this route",
+      message: error?.message || "Authentication failed",
     });
   }
 };

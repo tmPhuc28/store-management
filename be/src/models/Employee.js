@@ -188,8 +188,8 @@ employeeSchema.pre("save", function (next) {
 });
 
 // Indexes
-employeeSchema.index({ email: 1 }, { sparse: true });
-employeeSchema.index({ phone: 1 });
+//employeeSchema.index({ email: 1 }, { sparse: true });
+//employeeSchema.index({ phone: 1 });
 employeeSchema.index({ status: 1 });
 employeeSchema.index({ position: 1 });
 employeeSchema.index({

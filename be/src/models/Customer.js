@@ -182,8 +182,8 @@ customerSchema.methods.updatePurchaseStats = async function (session = null) {
 
 // Indexes
 customerSchema.index({ status: 1 });
-customerSchema.index({ phone: 1 });
-customerSchema.index({ email: 1 }, { sparse: true });
+//customerSchema.index({ phone: 1 });
+//customerSchema.index({ email: 1 }, { sparse: true });
 customerSchema.index({ createdAt: -1 });
 customerSchema.index({ lastPurchaseDate: -1 });
 customerSchema.index({ totalPurchases: -1 });

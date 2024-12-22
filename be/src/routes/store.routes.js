@@ -16,7 +16,20 @@ class StoreRouter extends BaseRouter {
       {
         protected: true,
         // Override default routes since store is singleton
-        routes: {},
+        routes: {
+          getHistory: {
+            protected: true,
+            adminOnly: true,
+          },
+          deleteHistoryEntry: {
+            protected: true,
+            adminOnly: true,
+          },
+          clearHistory: {
+            protected: true,
+            adminOnly: true,
+          },
+        },
       }
     );
 
@@ -48,6 +61,27 @@ class StoreRouter extends BaseRouter {
       [...this.protected(), authorize("admin")],
       validateBankInfo,
       this.controller.updateBankInfo
+    );
+
+    // Get history
+    this.router.get(
+      "/history",
+      [...this.protected(), authorize("admin")],
+      this.controller.getHistory
+    );
+
+    // Delete history entry
+    this.router.delete(
+      "/history/:historyId",
+      [...this.protected(), authorize("admin")],
+      this.controller.deleteHistoryEntry
+    );
+
+    // Clear all history
+    this.router.delete(
+      "/history",
+      [...this.protected(), authorize("admin")],
+      this.controller.clearHistory
     );
   }
 }

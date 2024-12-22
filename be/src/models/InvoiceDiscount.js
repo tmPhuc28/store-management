@@ -144,7 +144,7 @@ invoiceDiscountSchema.methods.calculateDiscount = function (orderValue) {
 };
 
 // Indexes
-invoiceDiscountSchema.index({ code: 1 }, { unique: true });
+//invoiceDiscountSchema.index({ code: 1 }, { unique: true });
 invoiceDiscountSchema.index({ status: 1 });
 invoiceDiscountSchema.index({ startDate: 1 });
 invoiceDiscountSchema.index({ endDate: 1 });

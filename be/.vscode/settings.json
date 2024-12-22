@@ -6,6 +6,7 @@
         "includetext",
         "maxlength",
         "qrcode",
+        "stackable",
         "textxalign",
         "topbar",
         "virtuals"

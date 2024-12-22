@@ -219,7 +219,7 @@ categorySchema.pre("deleteOne", { document: true }, async function (next) {
 });
 
 // Indexes
-categorySchema.index({ code: 1 }, { unique: true });
+//categorySchema.index({ code: 1 }, { unique: true });
 categorySchema.index({ name: "text", description: "text" });
 categorySchema.index({ status: 1 });
 categorySchema.index({ level: 1 });

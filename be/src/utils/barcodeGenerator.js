@@ -1,28 +1,31 @@
-// src/utils/barcodeGenerator.js
 const bwipjs = require("bwip-js");
 
-const generateBarcode = async (text) => {
+const generateBarcode = async (text, options = {}) => {
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    throw new Error("Invalid input: text must be a non-empty string");
+  }
+
+  const {
+    bcid = "code128",
+    scale = 3,
+    height = 15,
+    includetext = true,
+  } = options;
+
   try {
     const png = await bwipjs.toBuffer({
-      bcid: "code128", // Barcode type
-      text: text, // Text to encode
-      scale: 3, // 3x scaling factor
-      height: 15, // Bar height, in millimeters
-      includetext: true, // Show human-readable text
-      textxalign: "center", // Always good to set this
+      bcid,
+      text,
+      scale,
+      height,
+      includetext,
+      textxalign: "center",
     });
 
-    return {
-      success: true,
-      barcode: `data:image/png;base64,${png.toString("base64")}`,
-    };
+    return `data:image/png;base64,${png.toString("base64")}`;
   } catch (error) {
-    console.error("Error generating barcode:", error);
-    return {
-      success: false,
-      message: "Failed to generate barcode",
-      error: error.message,
-    };
+    console.error("Error generating barcode:", { error, text, options });
+    throw new Error("Failed to generate barcode");
   }
 };
 

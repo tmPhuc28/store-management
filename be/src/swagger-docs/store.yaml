@@ -147,4 +147,114 @@ paths:
         403:
           description: Not authorized (Admin only)
         404:
-          description: Store not found
+          description: Store not 
+          
+  /api/v2/store/history:
+    get:
+      summary: Get store update history (Admin only)
+      tags: [Store]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [timestamp, -timestamp]
+            default: -timestamp
+          description: Sort by timestamp
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            updatedBy:
+                              type: object
+                              properties:
+                                _id:
+                                  type: string
+                                username:
+                                  type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                            changes:
+                              type: object
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+        401:
+          description: Unauthorized
+        403:
+          description: Forbidden - Admin only
+    
+    delete:
+      summary: Clear all store history (Admin only)
+      tags: [Store]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: History cleared successfully
+        401:
+          description: Unauthorized
+        403:
+          description: Forbidden - Admin only
+
+  /api/v2/store/history/{historyId}:
+    delete:
+      summary: Delete specific history entry (Admin only) 
+      tags: [Store]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: historyId
+          required: true
+          schema:
+            type: string
+          description: History entry ID
+      responses:
+        200:
+          description: History entry deleted successfully
+        401:
+          description: Unauthorized
+        403:
+          description: Forbidden - Admin only
+        404:
+          description: History entry not found

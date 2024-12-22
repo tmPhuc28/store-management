@@ -57,7 +57,7 @@ const corsOptions = {
       callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: process.env.CORS_CREDENTIALS === "true",
+  credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
@@ -65,7 +65,7 @@ const corsOptions = {
     "X-Requested-With",
     "Accept",
   ],
-  exposedHeaders: ["set-cookie"],
+  exposedHeaders: ["Authorization", "Set-Cookie"],
   optionsSuccessStatus: 200,
 };
 

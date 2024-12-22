@@ -45,7 +45,7 @@ class StoreService extends BaseService {
         }
       }
 
-      return store;
+      return this.processResponse(store);
     } catch (error) {
       this.logger.error("Failed to retrieve store information", error);
       throw error;
@@ -135,7 +135,7 @@ class StoreService extends BaseService {
         }
       );
 
-      return store;
+      return this.processResponse(store);
     } catch (error) {
       await this.endTransaction(session, false);
       this.logger.error("Failed to update store", error);
@@ -180,6 +180,58 @@ class StoreService extends BaseService {
       return updatedStore.bankInfo;
     } catch (error) {
       this.logger.error("Failed to update bank info", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get store history
+   */
+  async getHistory(options = {}) {
+    try {
+      // Get the store document
+      const store = await this.model.findOne();
+      if (!store) {
+        throw new Error("Store information not found");
+      }
+
+      return await super.getHistory(store._id, options);
+    } catch (error) {
+      this.logger.error("Failed to get store history", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete specific history entry
+   */
+  async deleteHistoryEntry(historyId, user) {
+    try {
+      const store = await this.model.findOne();
+      if (!store) {
+        throw new Error("Store information not found");
+      }
+
+      return await super.deleteHistoryEntry(store._id, historyId, user);
+    } catch (error) {
+      this.logger.error("Failed to delete store history entry", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear all store history
+   */
+  async clearHistory(user) {
+    try {
+      const store = await this.model.findOne();
+      if (!store) {
+        throw new Error("Store information not found");
+      }
+
+      return await super.clearHistory(store._id, user);
+    } catch (error) {
+      this.logger.error("Failed to clear store history", error);
       throw error;
     }
   }

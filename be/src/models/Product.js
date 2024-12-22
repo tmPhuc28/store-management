@@ -389,8 +389,8 @@ productSchema.index({
   sku: "text",
   description: "text",
 });
-productSchema.index({ code: 1 }, { unique: true });
-productSchema.index({ sku: 1 }, { unique: true });
+//productSchema.index({ code: 1 }, { unique: true });
+//productSchema.index({ sku: 1 }, { unique: true });
 productSchema.index({ category: 1 });
 productSchema.index({ manufacturer: 1 });
 productSchema.index({ supplier: 1 });

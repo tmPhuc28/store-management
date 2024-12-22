@@ -33,14 +33,14 @@ class AuthRouter extends BaseRouter {
     // Public routes
     this.router.post(
       "/register",
-      //preventLoggedInAccess,
+      preventLoggedInAccess,
       registerValidator,
       this.controller.register
     );
 
     this.router.post(
       "/login",
-      //preventLoggedInAccess,
+      preventLoggedInAccess,
       loginValidator,
       this.controller.login
     );

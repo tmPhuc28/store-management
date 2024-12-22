@@ -149,7 +149,7 @@ productDiscountSchema.methods.calculateDiscountAmount = function (
 };
 
 // Indexes
-productDiscountSchema.index({ code: 1 }, { unique: true });
+//productDiscountSchema.index({ code: 1 }, { unique: true });
 productDiscountSchema.index({ status: 1 });
 productDiscountSchema.index({ startDate: 1 });
 productDiscountSchema.index({ endDate: 1 });

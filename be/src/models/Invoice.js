@@ -223,7 +223,7 @@ invoiceSchema.methods.canTransitionTo = function (newStatus) {
 };
 
 // Indexes
-invoiceSchema.index({ invoiceNumber: 1 }, { unique: true });
+//invoiceSchema.index({ invoiceNumber: 1 }, { unique: true });
 invoiceSchema.index({ customer: 1 });
 invoiceSchema.index({ status: 1 });
 invoiceSchema.index({ "payment.paidAt": 1 });

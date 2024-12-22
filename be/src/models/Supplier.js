@@ -239,7 +239,7 @@ supplierSchema.pre("save", function (next) {
 
 // Indexes
 supplierSchema.index({ name: "text", code: "text" });
-supplierSchema.index({ code: 1 }, { unique: true });
+//supplierSchema.index({ code: 1 }, { unique: true });
 supplierSchema.index({ status: 1 });
 supplierSchema.index({ createdAt: -1 });
 
