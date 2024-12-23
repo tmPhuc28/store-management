@@ -1,21 +1,30 @@
 // src/services/user.service.js
 const BaseService = require("./base/base.service");
 const User = require("../models/User");
+const Employee = require("../models/Employee");
 const { checkDuplicate } = require("../utils/duplicateCheck");
 const { validateUserStatusChange } = require("../utils/statusValidator");
-
+const AuthService = require("./auth.service");
 class UserService extends BaseService {
   constructor() {
     super(User, "User");
     this.useHistory = true;
     this.useTransactions = true;
-    this.excludeFields = [...this.excludeFields];
+    this.authService = AuthService;
     this.excludeFields = [
       ...this.excludeFields,
       "password",
       "refreshTokens",
       "resetPasswordToken",
       "resetPasswordExpire",
+      "passwordChangedAt",
+      "lastLogin",
+      "role",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "_id",
+      "id",
     ];
   }
 
@@ -79,6 +88,54 @@ class UserService extends BaseService {
   }
 
   /**
+   * Override create method to handle user creation
+   */
+  async create(data, user, options = {}) {
+    const session = await this.startTransaction(options);
+    try {
+      // Validate unique fields
+      await Promise.all([
+        this.validateUnique({ email: data.email }),
+        this.validateUnique({ username: data.username }),
+        this.validateRelatedEntities(data),
+      ]);
+
+      // Create user with history
+      const newUser = await this.model.create(
+        [
+          {
+            ...data,
+            updateHistory: [
+              {
+                action: "create",
+                updatedBy: user?._id || null,
+                changes: {
+                  ...data,
+                  password: "[secured]",
+                },
+              },
+            ],
+          },
+        ],
+        { session }
+      );
+
+      await this.endTransaction(session, true);
+
+      this.logger.success("User created successfully", {
+        userId: newUser[0]._id,
+        createdBy: user?._id,
+      });
+
+      return newUser[0];
+    } catch (error) {
+      await this.endTransaction(session, false);
+      this.logger.error("User creation failed", error);
+      throw error;
+    }
+  }
+
+  /**
    * Validate related entities
    */
   async validateRelatedEntities(data) {
@@ -116,7 +173,7 @@ class UserService extends BaseService {
   getPopulateConfig(view = "list") {
     const configs = {
       list: [
-        { path: "employee", select: "firstName lastName phone" },
+        { path: "employee", select: "firstName lastName phone dateOfBirth" },
         { path: "updateHistory.updatedBy", select: "username email" },
       ],
       detail: [
@@ -197,15 +254,6 @@ class UserService extends BaseService {
           "Email already in use"
         )
       );
-
-      // Also check if email exists in Employee collection
-      const employeeWithEmail = await Employee.findOne({
-        email: data.email.toLowerCase(),
-        _id: { $ne: data.employee },
-      });
-      if (employeeWithEmail) {
-        throw new Error("Email already used by another employee");
-      }
     }
 
     await Promise.all(checkFields);
@@ -237,58 +285,6 @@ class UserService extends BaseService {
     }
 
     return true;
-  }
-
-  /**
-   * Process response
-   */
-  processResponse(document) {
-    if (!document) return null;
-
-    const processed = super.processResponse(document);
-
-    // Add additional computed fields if needed
-    if (Array.isArray(processed)) {
-      processed.forEach((doc) => {
-        doc.hasActiveSessions = doc.refreshTokens?.length > 0;
-        doc.lastLoginAgo = doc.lastLogin
-          ? this.getTimeAgo(doc.lastLogin.timestamp)
-          : null;
-      });
-    } else {
-      processed.hasActiveSessions = processed.refreshTokens?.length > 0;
-      processed.lastLoginAgo = processed.lastLogin
-        ? this.getTimeAgo(processed.lastLogin.timestamp)
-        : null;
-    }
-
-    return processed;
-  }
-
-  /**
-   * Helper method to calculate time ago
-   */
-  getTimeAgo(date) {
-    if (!date) return null;
-
-    const seconds = Math.floor((new Date() - date) / 1000);
-
-    let interval = seconds / 31536000;
-    if (interval > 1) return Math.floor(interval) + " years ago";
-
-    interval = seconds / 2592000;
-    if (interval > 1) return Math.floor(interval) + " months ago";
-
-    interval = seconds / 86400;
-    if (interval > 1) return Math.floor(interval) + " days ago";
-
-    interval = seconds / 3600;
-    if (interval > 1) return Math.floor(interval) + " hours ago";
-
-    interval = seconds / 60;
-    if (interval > 1) return Math.floor(interval) + " minutes ago";
-
-    return Math.floor(seconds) + " seconds ago";
   }
 
   async validateRoleChange(id, newRole, requestUser) {

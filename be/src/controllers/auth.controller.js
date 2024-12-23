@@ -105,18 +105,12 @@ class AuthController extends BaseController {
       // Set auth cookies
       this.setAuthCookies(res, accessToken, refreshToken);
 
-      // Remove sensitive data
-      const userResponse = user.toObject();
-      delete userResponse.password;
-      delete userResponse.refreshTokens;
-
-      const response = ResponseHandler.success({
-        user: userResponse,
-        tokens: {
-          accessToken,
-          refreshToken,
+      const response = ResponseHandler.success(
+        {
+          user: user,
         },
-      });
+        "Login successful"
+      );
       res.status(response.statusCode).json(response.body);
     } catch (error) {
       const response = ResponseHandler.error(error);
@@ -213,11 +207,9 @@ class AuthController extends BaseController {
    */
   getMe = async (req, res) => {
     try {
-      const user = req.user;
-      user.password = undefined;
-      user.refreshTokens = undefined;
+      const user = await this.service.getMe(req.user._id);
 
-      const response = ResponseHandler.success({ user });
+      const response = ResponseHandler.success({ user }, "Get profile success");
       res.status(response.statusCode).json(response.body);
     } catch (error) {
       const response = ResponseHandler.error(error);

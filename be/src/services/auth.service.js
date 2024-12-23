@@ -2,12 +2,24 @@
 const BaseService = require("./base/base.service");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
+const { checkDuplicate } = require("../utils/duplicateCheck");
 
 class AuthService extends BaseService {
   constructor() {
     super(User, "Auth");
     this.useTransactions = true;
-    this.excludeFields = [...this.excludeFields];
+    this.excludeFields = [
+      ...this.excludeFields,
+      "password",
+      "refreshTokens",
+      "role",
+      "lastLogin",
+      "createdAt",
+      "updatedAt",
+      "_id",
+      "id",
+      "status",
+    ];
   }
 
   /**
@@ -103,13 +115,15 @@ class AuthService extends BaseService {
       // Save user with new refresh token
       await user.save();
 
+      const userResponse = this.processResponse(user);
+
       this.logger.success("User logged in successfully", {
         userId: user._id,
         ...clientInfo,
       });
 
       return {
-        user,
+        user: userResponse,
         accessToken,
         refreshToken,
       };
@@ -203,6 +217,24 @@ class AuthService extends BaseService {
   }
 
   /**
+   * Get profile
+   */
+  async getMe(userId) {
+    try {
+      const user = await this.model
+        .findById(userId)
+        .select("-password -refreshTokens");
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      return this.processResponse(user);
+    } catch (error) {
+      this.logger.error("Get profile failed", error);
+      throw error;
+    }
+  }
+  /**
    * Change password
    */
   async changePassword(user, currentPassword, newPassword, clientInfo = {}) {
@@ -239,16 +271,31 @@ class AuthService extends BaseService {
   /**
    * Override base methods
    */
-  async validateUnique(data) {
-    if (data.email) {
-      const existing = await this.model.findOne({ email: data.email });
-      if (existing) throw new Error("Email already registered");
-    }
+  async validateUnique(data, excludeId = null) {
+    const checkFields = [];
 
     if (data.username) {
-      const existing = await this.model.findOne({ username: data.username });
-      if (existing) throw new Error("Username already taken");
+      checkFields.push(
+        checkDuplicate(
+          this.model,
+          { username: data.username.toLowerCase() },
+          excludeId,
+          "Username already in use"
+        )
+      );
     }
+
+    if (data.email) {
+      checkFields.push(
+        checkDuplicate(
+          this.model,
+          { email: data.email.toLowerCase() },
+          excludeId,
+          "Email already in use"
+        )
+      );
+    }
+    await Promise.all(checkFields);
   }
 }
 

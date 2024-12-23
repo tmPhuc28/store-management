@@ -24,65 +24,6 @@ components:
             type: string
           example: ["Black", "White", "Blue"]
           
-    ProductLocation:
-      type: object
-      required:
-        - product
-        - zone
-        - quantity
-      properties:
-        product:
-          type: string
-          description: Reference to Product ID
-        zone:
-          type: object
-          required:
-            - warehouse
-            - area
-            - rack
-          properties:
-            warehouse:
-              type: string
-              example: "WH1"
-            area:
-              type: string
-              example: "A1"
-            rack:
-              type: string
-              example: "R1"
-            shelf:
-              type: string
-              example: "S1"
-            bin:
-              type: string
-              example: "B1"
-        quantity:
-          type: integer
-          minimum: 0
-          example: 100
-        maxQuantity:
-          type: integer
-          minimum: 0
-          example: 500
-          nullable: true
-        status:
-          type: integer
-          enum: [0, 1]
-          default: 1
-          description: "0=inactive, 1=active"
-        notes:
-          type: string
-          example: "Main storage location for this product"
-        locationCode:
-          type: string
-          readOnly: true
-          example: "WH1-A1-R1-S1-B1"
-        availableSpace:
-          type: integer
-          readOnly: true
-          example: 400
-          nullable: true
-
     Image:
       type: object
       required:
@@ -579,41 +520,6 @@ paths:
           description: Quantity adjusted successfully
         400:
           description: Invalid adjustment
-        404:
-          description: Product not found
-
-  /api/v1/products/{id}/locations:
-    get:
-      summary: Get product locations summary
-      tags: [Products]
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        200:
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  totalLocations:
-                    type: integer
-                  activeLocations:
-                    type: integer
-                  totalQuantity:
-                    type: integer
-                  availableLocations:
-                    type: integer
-                  locations:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ProductLocation"
         404:
           description: Product not found
 

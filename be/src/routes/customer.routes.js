@@ -61,8 +61,6 @@ class CustomerRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {

@@ -63,8 +63,6 @@ class ProductRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {
@@ -133,13 +131,6 @@ class ProductRouter extends BaseRouter {
         adjustQuantityValidator,
       ],
       this.controller.adjustQuantity
-    );
-
-    // Get location summary
-    this.router.get(
-      "/:id/locations",
-      [this.protected(), objectIdValidator("id")],
-      this.controller.getLocationSummary
     );
   }
 }

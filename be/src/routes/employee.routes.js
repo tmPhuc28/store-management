@@ -56,11 +56,7 @@ class EmployeeRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
-
-  initializeCustomRoutes() {}
 }
 
 module.exports = new EmployeeRouter().getRouter();

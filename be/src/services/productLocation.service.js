@@ -5,10 +5,15 @@ const Product = require("../models/Product");
 class ProductLocationService extends BaseService {
   constructor() {
     super(ProductLocation, "ProductLocation");
-    this.nullableFields = ["zone.shelf", "zone.bin", "maxQuantity", "notes"];
+    this.nullableFields = ["zone.shelf", "zone.bin", "notes"];
     this.useHistory = true;
     this.useTransactions = true;
-    this.excludeFields = [...this.excludeFields];
+    this.excludeFields = [
+      ...this.excludeFields,
+      "createdAt",
+      "updatedAt",
+      "createdBy",
+    ];
   }
 
   getSearchFields() {
@@ -30,8 +35,8 @@ class ProductLocationService extends BaseService {
       ],
       detail: [
         { path: "product", select: "name code sku" },
-        { path: "createdBy", select: "username email" },
-        { path: "updateHistory.updatedBy", select: "username email" },
+        { path: "createdBy", select: "username email status" },
+        { path: "updateHistory.updatedBy", select: "username email status" },
       ],
     };
     return configs[view] || configs.list;
@@ -58,20 +63,6 @@ class ProductLocationService extends BaseService {
 
     if (params.rack) {
       query["zone.rack"] = params.rack;
-    }
-
-    if (params.hasAvailableSpace !== undefined) {
-      if (params.hasAvailableSpace === "true") {
-        query.$or = [
-          { maxQuantity: null },
-          { $expr: { $lt: ["$quantity", "$maxQuantity"] } },
-        ];
-      } else {
-        query.$and = [
-          { maxQuantity: { $ne: null } },
-          { $expr: { $gte: ["$quantity", "$maxQuantity"] } },
-        ];
-      }
     }
 
     return query;
@@ -107,14 +98,6 @@ class ProductLocationService extends BaseService {
     );
     if (!baseValidation.isValid) {
       return baseValidation;
-    }
-
-    // Cannot deactivate if location has stock
-    if (newStatus === 0 && document.quantity > 0) {
-      return {
-        isValid: false,
-        message: "Cannot deactivate location that has stock",
-      };
     }
 
     return { isValid: true };
@@ -180,20 +163,9 @@ class ProductLocationService extends BaseService {
         })
         .select("-updateHistory");
 
-      const totalQuantity = locations.reduce(
-        (sum, loc) => sum + loc.quantity,
-        0
-      );
-
-      const availableLocations = locations.filter(
-        (loc) => loc.maxQuantity === null || loc.quantity < loc.maxQuantity
-      );
-
       return {
         totalLocations: locations.length,
         activeLocations: locations.filter((loc) => loc.status === 1).length,
-        totalQuantity,
-        availableLocations: availableLocations.length,
         locations: this.processResponse(locations),
       };
     } catch (error) {

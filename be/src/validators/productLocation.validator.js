@@ -45,25 +45,6 @@ exports.createProductLocationValidator = [
 
   ...zoneValidationRules,
 
-  body("quantity")
-    .notEmpty()
-    .withMessage("Quantity is required")
-    .isInt({ min: 0 })
-    .withMessage("Quantity must be a non-negative integer"),
-
-  body("maxQuantity")
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage("Maximum quantity must be a non-negative integer")
-    .custom((value, { req }) => {
-      if (value !== null && value < req.body.quantity) {
-        throw new Error(
-          "Maximum quantity must be greater than or equal to quantity"
-        );
-      }
-      return true;
-    }),
-
   body("notes")
     .optional()
     .trim()
@@ -81,25 +62,6 @@ exports.updateProductLocationValidator = [
   body("product").optional().isMongoId().withMessage("Invalid product ID"),
 
   ...zoneValidationRules.map((rule) => rule.optional()),
-
-  body("quantity")
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage("Quantity must be a non-negative integer"),
-
-  body("maxQuantity")
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage("Maximum quantity must be a non-negative integer")
-    .custom((value, { req }) => {
-      const quantity = req.body.quantity ?? req.existingLocation?.quantity;
-      if (value !== null && quantity && value < quantity) {
-        throw new Error(
-          "Maximum quantity must be greater than or equal to quantity"
-        );
-      }
-      return true;
-    }),
 
   body("notes")
     .optional()

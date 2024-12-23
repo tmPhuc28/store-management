@@ -153,21 +153,6 @@ class ProductController extends BaseController {
       res.status(response.statusCode).json(response.body);
     }
   };
-
-  /**
-   * Get product location summary
-   */
-  getLocationSummary = async (req, res) => {
-    try {
-      const summary = await this.service.getLocationSummary(req.params.id);
-
-      const response = ResponseHandler.success(summary);
-      res.status(response.statusCode).json(response.body);
-    } catch (error) {
-      const response = ResponseHandler.error(error);
-      res.status(response.statusCode).json(response.body);
-    }
-  };
 }
 
 module.exports = ProductController;

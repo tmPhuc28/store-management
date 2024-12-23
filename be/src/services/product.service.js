@@ -438,16 +438,6 @@ class ProductService extends BaseService {
       throw error;
     }
   }
-
-  // Location related methods
-  async getLocationSummary(id) {
-    try {
-      return await this.locationService.getProductLocationsSummary(id);
-    } catch (error) {
-      this.logger.error("Failed to get location summary", error);
-      throw error;
-    }
-  }
 }
 
 module.exports = new ProductService();

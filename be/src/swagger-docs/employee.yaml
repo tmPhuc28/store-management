@@ -45,10 +45,6 @@ components:
           type: string
           pattern: ^[0-9+\-\s()]*$
           example: "0123456789"
-        email:
-          type: string
-          format: email
-          example: "john.doe@example.com"
         dateOfBirth:
           type: string
           format: date

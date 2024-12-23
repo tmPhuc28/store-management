@@ -56,8 +56,6 @@ class ProductDiscountRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {

@@ -5,13 +5,7 @@ const { checkDuplicate } = require("../utils/duplicateCheck");
 class EmployeeService extends BaseService {
   constructor() {
     super(Employee, "Employee");
-    this.nullableFields = [
-      "email",
-      "dateOfBirth",
-      "gender",
-      "address",
-      "position",
-    ];
+    this.nullableFields = ["dateOfBirth", "gender", "address", "position"];
     this.useHistory = true;
     this.useTransactions = true;
     this.excludeFields = [...this.excludeFields];
@@ -21,7 +15,7 @@ class EmployeeService extends BaseService {
    * Define searchable fields
    */
   getSearchFields() {
-    return ["firstName", "lastName", "phone", "email", "position"];
+    return ["firstName", "lastName", "phone", "position"];
   }
 
   /**
@@ -99,17 +93,6 @@ class EmployeeService extends BaseService {
           { phone: data.phone },
           excludeId,
           "Phone number already registered"
-        )
-      );
-    }
-
-    if (data.email) {
-      checkFields.push(
-        checkDuplicate(
-          this.model,
-          { email: data.email.toLowerCase() },
-          excludeId,
-          "Email already registered"
         )
       );
     }

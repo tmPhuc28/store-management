@@ -1,5 +1,5 @@
 // src/validators/user.validator.js
-const { body } = require("express-validator");
+const { body, validationResult } = require("express-validator");
 
 // User update validation
 exports.updateUserValidator = [
@@ -26,12 +26,6 @@ exports.updateUserValidator = [
     .withMessage("Invalid role value")
     .toInt(),
 
-  body("role")
-    .optional()
-    .isIn([0, 1])
-    .withMessage("Invalid role value")
-    .toInt(),
-
   body("employee")
     .optional()
     .isMongoId()
@@ -49,12 +43,47 @@ exports.updateUserValidator = [
     .withMessage("Cannot update sensitive fields through this endpoint"),
 ];
 
-// Custom validation middleware
-exports.validateUserUpdate = async (req, res, next) => {
-  try {
-    // Additional custom validations if needed
-    next();
-  } catch (error) {
-    next(error);
-  }
-};
+// User create validation
+exports.createUserValidator = [
+  body("username")
+    .notEmpty()
+    .trim()
+    .withMessage("Username is required")
+    .isLength({ min: 3 })
+    .withMessage("Username must be at least 3 characters")
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage("Username can only contain letters, numbers and underscore"),
+
+  body("email")
+    .notEmpty()
+    .isEmail()
+    .withMessage("Valid email is required")
+    .normalizeEmail(),
+
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters long")
+    .matches(/\d/)
+    .withMessage("Password must contain at least one number")
+    .matches(/[a-zA-Z]/)
+    .withMessage("Password must contain at least one letter")
+    .not()
+    .equals("password123")
+    .withMessage("Password is too common"),
+
+  body("role")
+    .optional()
+    .isIn([0, 1])
+    .withMessage("Invalid role value")
+    .toInt(),
+
+  body([
+    "employee",
+    "refreshTokens",
+    "resetPasswordToken",
+    "resetPasswordExpire",
+  ])
+    .not()
+    .exists()
+    .withMessage("Cannot update sensitive fields through this endpoint"),
+];

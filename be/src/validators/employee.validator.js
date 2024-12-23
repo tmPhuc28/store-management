@@ -25,12 +25,6 @@ exports.createEmployeeValidator = [
     .withMessage("Invalid phone number format"),
 
   // Optional fields
-  body("email")
-    .optional()
-    .trim()
-    .isEmail()
-    .withMessage("Invalid email format")
-    .normalizeEmail(),
 
   body("dateOfBirth").optional().isISO8601().withMessage("Invalid date format"),
 
@@ -88,12 +82,6 @@ exports.updateEmployeeValidator = [
     .withMessage("Invalid phone number format"),
 
   // Rest are same as create validator
-  body("email")
-    .optional()
-    .trim()
-    .isEmail()
-    .withMessage("Invalid email format")
-    .normalizeEmail(),
 
   body("dateOfBirth").optional().isISO8601().withMessage("Invalid date format"),
 

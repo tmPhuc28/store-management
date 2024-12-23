@@ -58,6 +58,16 @@ exports.registerValidator = [
     .isIn([0, 1])
     .withMessage("Status must be either 0 (inactive) or 1 (active)")
     .toInt(),
+
+  body([
+    "employee",
+    "refreshTokens",
+    "resetPasswordToken",
+    "resetPasswordExpire",
+  ])
+    .not()
+    .exists()
+    .withMessage("Cannot update sensitive fields through this endpoint"),
 ];
 
 /**

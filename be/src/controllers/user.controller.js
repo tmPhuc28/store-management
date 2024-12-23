@@ -28,6 +28,28 @@ class UserController extends BaseController {
       res.status(response.statusCode).json(response.body);
     }
   };
+
+  create = async (req, res) => {
+    try {
+      this.validateRequest(req);
+
+      const userData = {
+        ...req.body,
+        createdBy: req.user?._id,
+      };
+
+      const user = await this.service.create(userData, req.user);
+
+      const response = ResponseHandler.success(
+        user,
+        "User created successfully"
+      );
+      res.status(201).json(response.body);
+    } catch (error) {
+      const response = ResponseHandler.error(error);
+      res.status(response.statusCode).json(response.body);
+    }
+  };
 }
 
 module.exports = UserController;

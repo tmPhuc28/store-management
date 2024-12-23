@@ -32,8 +32,6 @@ class StoreRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {

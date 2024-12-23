@@ -25,45 +25,41 @@ class AuthRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {
-    // Public routes
-    this.router.post(
+    // Các route công khai
+    this.customRouter(
+      "post",
       "/register",
-      preventLoggedInAccess,
-      registerValidator,
-      this.controller.register
+      this.controller.register,
+      [preventLoggedInAccess, registerValidator],
+      false
     );
-
-    this.router.post(
+    this.customRouter(
+      "post",
       "/login",
-      preventLoggedInAccess,
-      loginValidator,
-      this.controller.login
+      this.controller.login,
+      [preventLoggedInAccess, loginValidator],
+      false
     );
-
-    this.router.post(
+    this.customRouter(
+      "post",
       "/refresh-token",
-      refreshTokenValidator,
-      this.controller.refreshToken
+      this.controller.refreshToken,
+      [refreshTokenValidator],
+      false
     );
 
-    // Protected routes
-    this.router.use(protect);
-
-    this.router.get("/me", this.controller.getMe);
-
-    this.router.post("/logout", this.controller.logout);
-
-    this.router.post("/logout-all", this.controller.logoutAll);
-
-    this.router.post(
+    // Các route được bảo vệ
+    this.customRouter("get", "/me", this.controller.getMe);
+    this.customRouter("post", "/logout", this.controller.logout);
+    this.customRouter("post", "/logout-all", this.controller.logoutAll);
+    this.customRouter(
+      "post",
       "/change-password",
-      changePasswordValidator,
-      this.controller.changePassword
+      this.controller.changePassword,
+      [changePasswordValidator]
     );
   }
 }

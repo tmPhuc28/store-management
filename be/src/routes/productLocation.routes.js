@@ -56,30 +56,20 @@ class ProductLocationRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {
-    // Get warehouses
-    this.router.get(
-      "/warehouses",
-      this.protected(),
-      this.controller.getWarehouses
-    );
-
-    // Get areas by warehouse
-    this.router.get(
+    this.customRouter("get", "/warehouses", this.controller.getWarehouses);
+    this.customRouter(
+      "get",
       "/warehouses/:warehouse/areas",
-      this.protected(),
       this.controller.getAreas
     );
-
-    // Get product locations summary
-    this.router.get(
+    this.customRouter(
+      "get",
       "/products/:productId/summary",
-      [this.protected(), objectIdValidator("productId")],
-      this.controller.getProductLocationsSummary
+      this.controller.getProductLocationsSummary,
+      [objectIdValidator("productId")]
     );
   }
 }

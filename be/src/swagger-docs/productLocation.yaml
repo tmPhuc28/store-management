@@ -37,22 +37,12 @@ components:
       required:
         - product
         - zone
-        - quantity
       properties:
         product:
           type: string
           description: Reference to Product ID
         zone:
           $ref: '#/components/schemas/Zone'
-        quantity:
-          type: integer
-          minimum: 0
-          example: 100
-        maxQuantity:
-          type: integer
-          minimum: 0
-          example: 500
-          nullable: true
         status:
           type: integer
           enum: [0, 1]

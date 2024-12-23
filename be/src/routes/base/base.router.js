@@ -33,6 +33,7 @@ class BaseRouter {
     };
 
     this.initializeRoutes();
+    this.initializeCustomRoutes();
   }
 
   /**
@@ -166,10 +167,20 @@ class BaseRouter {
   }
 
   /**
+   * Initialize custom routes
+   */
+  initializeCustomRoutes() {
+    //custom routes
+  }
+
+  /**
    * Add custom route
    */
-  addRoute(method, path, handlers, validators = []) {
-    this.router[method](path, this.protected(), validators, handlers);
+  customRouter(method, path, handler, validators = [], isProtected = true) {
+    const middleware = isProtected
+      ? [...this.protected(), ...validators]
+      : [...validators];
+    this.router[method](path, middleware, handler);
     return this;
   }
 

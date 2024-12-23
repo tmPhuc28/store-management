@@ -57,8 +57,6 @@ class InvoiceDiscountRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {

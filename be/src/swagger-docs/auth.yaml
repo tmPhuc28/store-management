@@ -20,16 +20,16 @@ components:
         username:
           type: string
           minLength: 3
-          example: "john_doe"
+          example: "admin"
         email:
           type: string
           format: email
-          example: "john@example.com"
+          example: "admin@example.com"
         password:
           type: string
           format: password
           minLength: 6
-          example: "password123"
+          example: "123456a"
         role:
           type: integer
           enum: [0, 1]
@@ -149,11 +149,11 @@ paths:
                 login:
                   type: string
                   description: Username or email
-                  example: "john_doe"
+                  example: "admin"
                 password:
                   type: string
                   format: password
-                  example: "password123"
+                  example: "123456a"
       responses:
         200:
           description: Login successful
@@ -295,13 +295,13 @@ paths:
             schema:
               type: object
               required:
-                - oldPassword
+                - currentPassword
                 - newPassword
               properties:
-                oldPassword:
+                currentPassword:
                   type: string
                   format: password
-                  example: "oldPassword123"
+                  example: "currentPassword123"
                 newPassword:
                   type: string
                   format: password

@@ -51,17 +51,7 @@ const employeeSchema = new mongoose.Schema(
     },
 
     // Optional fields with default values
-    email: {
-      type: String,
-      default: null,
-      trim: true,
-      lowercase: true,
-      sparse: true,
-      match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-        "Please enter a valid email",
-      ],
-    },
+
     dateOfBirth: {
       type: Date,
       default: null,
@@ -161,34 +151,7 @@ employeeSchema.methods.generateUsername = function () {
     .replace(/[^a-z0-9.]/g, ""); // Remove special characters
 };
 
-// Generate default email if not provided
-employeeSchema.methods.generateEmail = function (domain = "company.com") {
-  return `${this.generateUsername()}@${domain}`;
-};
-
-// Pre-save middleware để đảm bảo giá trị null cho các trường rỗng
-employeeSchema.pre("save", function (next) {
-  // Convert empty strings to null
-  Object.keys(this._doc).forEach((key) => {
-    if (this[key] === "") {
-      this[key] = null;
-    }
-  });
-
-  // Handle nested address object
-  if (this.address) {
-    Object.keys(this.address._doc).forEach((key) => {
-      if (this.address[key] === "") {
-        this.address[key] = null;
-      }
-    });
-  }
-
-  next();
-});
-
 // Indexes
-//employeeSchema.index({ email: 1 }, { sparse: true });
 //employeeSchema.index({ phone: 1 });
 employeeSchema.index({ status: 1 });
 employeeSchema.index({ position: 1 });

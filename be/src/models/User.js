@@ -102,6 +102,47 @@ userSchema.virtual("statusText").get(function () {
   return this.status === 1 ? "active" : "inactive";
 });
 
+userSchema.virtual("lastLoginAgo").get(function () {
+  if (!this.lastLogin?.timestamp) {
+    return `Not logged in yet`;
+  }
+
+  const seconds = Math.floor((new Date() - this.lastLogin.timestamp) / 1000);
+
+  // Less than 1 minute
+  if (seconds < 60) {
+    return `${seconds} seconds ago`;
+  }
+
+  // Less than 1 hour
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
+  }
+
+  // Less than 1 day
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
+  }
+
+  // Less than 1 month
+  const days = Math.floor(hours / 24);
+  if (days < 30) {
+    return `${days} day${days !== 1 ? "s" : ""} ago`;
+  }
+
+  // Less than 1 year
+  const months = Math.floor(days / 30);
+  if (months < 12) {
+    return `${months} month${months !== 1 ? "s" : ""} ago`;
+  }
+
+  // More than 1 year
+  const years = Math.floor(months / 12);
+  return `${years} year${years !== 1 ? "s" : ""} ago`;
+});
+
 // Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {

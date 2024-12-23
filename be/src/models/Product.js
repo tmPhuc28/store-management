@@ -305,19 +305,6 @@ productSchema.methods.calculateCurrentPrice = function () {
   return this.sellingPrice - this.discount.value;
 };
 
-// Method để cập nhật số lượng từ locations
-productSchema.methods.updateQuantityFromLocations = async function () {
-  const locations = await mongoose.model("ProductLocation").find({
-    product: this._id,
-    status: 1,
-  });
-
-  this.quantity = locations.reduce((sum, loc) => sum + loc.quantity, 0);
-  this.isOutOfStock = this.quantity <= 0;
-
-  await this.save();
-};
-
 // Method để áp dụng mã giảm giá
 productSchema.methods.applyDiscountCode = async function (code) {
   const ProductDiscount = mongoose.model("ProductDiscount");

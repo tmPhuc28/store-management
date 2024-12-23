@@ -3,16 +3,10 @@ const winston = require("winston");
 const path = require("path");
 
 const logger = winston.createLogger({
+  level: "info",
   format: winston.format.combine(
     winston.format.timestamp(),
-    winston.format.printf(({ timestamp, level, message, ...meta }) => {
-      return JSON.stringify({
-        timestamp,
-        level,
-        message,
-        ...meta,
-      });
-    })
+    winston.format.json()
   ),
   transports: [
     new winston.transports.File({
@@ -20,8 +14,7 @@ const logger = winston.createLogger({
       level: "error",
     }),
     new winston.transports.File({
-      filename: path.join(__dirname, "../../logs/action.log"),
-      level: "info",
+      filename: path.join(__dirname, "../../logs/combined.log"),
     }),
   ],
 });

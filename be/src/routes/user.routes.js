@@ -3,7 +3,7 @@ const BaseRouter = require("./base/base.router");
 const UserController = require("../controllers/user.controller");
 const {
   updateUserValidator,
-  validateUserUpdate,
+  createUserValidator,
 } = require("../validators/user.validator");
 
 const { objectIdValidator } = require("../validators/common.validator");
@@ -12,7 +12,8 @@ class UserRouter extends BaseRouter {
     super(
       new UserController(),
       {
-        update: [updateUserValidator, validateUserUpdate],
+        create: [createUserValidator],
+        update: [updateUserValidator],
       },
       {
         protected: true,
@@ -23,6 +24,10 @@ class UserRouter extends BaseRouter {
             adminOnly: true,
           },
           getOne: {
+            protected: true,
+            adminOnly: true,
+          },
+          create: {
             protected: true,
             adminOnly: true,
           },
@@ -53,8 +58,6 @@ class UserRouter extends BaseRouter {
         },
       }
     );
-
-    this.initializeCustomRoutes();
   }
 
   initializeCustomRoutes() {
