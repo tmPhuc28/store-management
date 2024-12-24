@@ -24,6 +24,8 @@ const sanitizeChanges = (changes) => {
   delete sanitized.__v;
   delete sanitized.createdAt;
   delete sanitized.updatedAt;
+  delete sanitized.createdBy;
+  sanitized.password = "[Secure]"; // If password is updated, it should be hashed before saving to history
   return sanitized;
 };
 

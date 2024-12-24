@@ -26,7 +26,7 @@ class UserService extends BaseService {
       "employee",
       "password",
     ];
-    this.protectedFields = [...this.protectedFields, "role"];
+    this.protectedFields = [...this.protectedFields];
 
     this.excludeFields = [
       ...this.excludeFields,
