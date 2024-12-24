@@ -81,10 +81,6 @@ const productLocationSchema = new mongoose.Schema(
 );
 
 // Virtuals
-productLocationSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 productLocationSchema.virtual("locationCode").get(function () {
   const { warehouse, area, rack, shelf, bin } = this.zone;
   return [warehouse, area, rack, shelf, bin].filter(Boolean).join("-");

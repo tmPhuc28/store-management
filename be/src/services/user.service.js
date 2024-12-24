@@ -2,7 +2,6 @@
 const BaseService = require("./base/base.service");
 const User = require("../models/User");
 const Employee = require("../models/Employee");
-const { checkDuplicate } = require("../utils/duplicateCheck");
 const { validateUserStatusChange } = require("../utils/statusValidator");
 const AuthService = require("./auth.service");
 class UserService extends BaseService {
@@ -11,6 +10,24 @@ class UserService extends BaseService {
     this.useHistory = true;
     this.useTransactions = true;
     this.authService = AuthService;
+
+    this.nullableFields = [
+      "employee",
+      "passwordChangedAt",
+      "resetPasswordToken",
+      "resetPasswordExpire",
+      "lastLogin",
+    ];
+    this.allowedFields = [
+      "username",
+      "email",
+      "role",
+      "status",
+      "employee",
+      "password",
+    ];
+    this.protectedFields = [...this.protectedFields, "role"];
+
     this.excludeFields = [
       ...this.excludeFields,
       "password",
@@ -19,13 +36,29 @@ class UserService extends BaseService {
       "resetPasswordExpire",
       "passwordChangedAt",
       "lastLogin",
-      "role",
-      "status",
-      "createdAt",
-      "updatedAt",
-      "_id",
-      "id",
     ];
+  }
+
+  /**
+   * Override create method to handle user creation
+   */
+  async create(data, user, options = {}) {
+    const session = await this.startTransaction(options);
+    try {
+      // Validate unique fields
+      await this.validateRelatedEntities(data);
+
+      const result = await super.create(data, user, {
+        ...options,
+        session,
+      });
+
+      await this.endTransaction(session, true);
+      return result;
+    } catch (error) {
+      await this.endTransaction(session, false);
+      throw error;
+    }
   }
 
   /**
@@ -38,7 +71,6 @@ class UserService extends BaseService {
       if (data.role !== undefined) {
         await this.validateRoleChange(id, data.role, user);
       }
-      await this.validateUnique(data, id);
       await this.validateRelatedEntities(data);
 
       const result = await super.update(id, data, user, {
@@ -88,54 +120,6 @@ class UserService extends BaseService {
   }
 
   /**
-   * Override create method to handle user creation
-   */
-  async create(data, user, options = {}) {
-    const session = await this.startTransaction(options);
-    try {
-      // Validate unique fields
-      await Promise.all([
-        this.validateUnique({ email: data.email }),
-        this.validateUnique({ username: data.username }),
-        this.validateRelatedEntities(data),
-      ]);
-
-      // Create user with history
-      const newUser = await this.model.create(
-        [
-          {
-            ...data,
-            updateHistory: [
-              {
-                action: "create",
-                updatedBy: user?._id || null,
-                changes: {
-                  ...data,
-                  password: "[secured]",
-                },
-              },
-            ],
-          },
-        ],
-        { session }
-      );
-
-      await this.endTransaction(session, true);
-
-      this.logger.success("User created successfully", {
-        userId: newUser[0]._id,
-        createdBy: user?._id,
-      });
-
-      return newUser[0];
-    } catch (error) {
-      await this.endTransaction(session, false);
-      this.logger.error("User creation failed", error);
-      throw error;
-    }
-  }
-
-  /**
    * Validate related entities
    */
   async validateRelatedEntities(data) {
@@ -173,14 +157,18 @@ class UserService extends BaseService {
   getPopulateConfig(view = "list") {
     const configs = {
       list: [
-        { path: "employee", select: "firstName lastName phone dateOfBirth" },
-        { path: "updateHistory.updatedBy", select: "username email" },
+        {
+          path: "employee",
+          select: "firstName lastName phone dateOfBirth",
+        },
       ],
       detail: [
-        { path: "employee", select: "firstName lastName phone email address" },
-        { path: "updateHistory.updatedBy", select: "username email" },
+        {
+          path: "employee",
+          select: "firstName lastName phone dateOfBirth",
+        },
       ],
-      select: [{ path: "employee", select: "firstName lastName" }],
+      select: [],
     };
     return configs[view] || configs.list;
   }
@@ -236,8 +224,7 @@ class UserService extends BaseService {
 
     if (data.username) {
       checkFields.push(
-        checkDuplicate(
-          this.model,
+        this.checkDuplicate(
           { username: data.username.toLowerCase() },
           excludeId,
           "Username already in use"
@@ -247,8 +234,7 @@ class UserService extends BaseService {
 
     if (data.email) {
       checkFields.push(
-        checkDuplicate(
-          this.model,
+        this.checkDuplicate(
           { email: data.email.toLowerCase() },
           excludeId,
           "Email already in use"

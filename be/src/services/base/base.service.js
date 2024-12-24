@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { logAction } = require("../../utils/logger");
-const normalizeData = require("../../utils/normalizeData");
+const { processData, processResponse } = require("../../utils/dataProcessor");
+const { checkDuplicate } = require("../../utils/duplicateCheck");
 const {
   createHistoryRecord,
   mergeHistory,
@@ -13,11 +14,28 @@ class BaseService {
     this.serviceName = serviceName;
     this.logger = logAction(serviceName);
     this.queryBuilder = new QueryBuilder(this.getSearchFields());
-    this.nullableFields = [];
     this.useHistory = false;
     this.useTransactions = false;
-    // Define fields that should be excluded from responses
-    this.excludeFields = ["updateHistory", "__v"];
+
+    this.nullableFields = [];
+    this.allowedFields = [];
+    this.protectedFields = [
+      "createdAt",
+      "updatedAt",
+      "createdBy",
+      "updateHistory",
+      "__v",
+      "_id",
+      "id",
+    ];
+
+    this.excludeFields = [
+      "__v",
+      "_id",
+      "createdAt",
+      "updatedAt",
+      "updateHistory",
+    ];
   }
 
   /**
@@ -107,7 +125,7 @@ class BaseService {
         page = 1,
         limit = 10,
         sort = "-timestamp",
-        populate = this.getPopulateConfig("detail"),
+        populate = this.getPopulateConfig("select"),
       } = options;
 
       const startIndex = (parseInt(page) - 1) * parseInt(limit);
@@ -245,32 +263,40 @@ class BaseService {
     const session = await this.startTransaction(options);
 
     try {
-      const normalizedData = normalizeData(data, this.nullableFields);
-      await this.validateUnique(normalizedData);
-      if (user) {
-        normalizedData.createdBy = user._id;
+      const processedData = processData(data, {
+        nullableFields: this.nullableFields,
+        protectedFields: this.protectedFields,
+        allowedFields: this.allowedFields,
+      });
+
+      // Check if there's any data left after processing
+      if (Object.keys(processedData).length === 0) {
+        throw new Error(
+          "No valid data provided after filtering protected fields"
+        );
       }
+
+      await this.validateUnique(processedData);
+
+      if (user) {
+        processedData.createdBy = user._id;
+      }
+
       if (this.useHistory && user) {
         const historyRecord = createHistoryRecord(
           user,
-          normalizedData,
+          processedData,
           "create"
         );
-        normalizedData.updateHistory = [historyRecord];
+        processedData.updateHistory = [historyRecord];
       }
 
-      const document = await this.model.create([normalizedData], { session });
+      const document = await this.model.create([processedData], { session });
       await this.endTransaction(session, true);
-
-      this.logger.success(`Created ${this.serviceName}`, {
-        id: document[0]._id,
-        user: user?._id,
-      });
 
       return this.processResponse(document[0]);
     } catch (error) {
       await this.endTransaction(session, false);
-      this.logger.error(`Error creating ${this.serviceName}`, error);
       throw error;
     }
   }
@@ -282,19 +308,29 @@ class BaseService {
     const session = await this.startTransaction(options);
 
     try {
-      const normalizedData = normalizeData(data, this.nullableFields);
-      await this.validateUnique(normalizedData, id);
+      const processedData = processData(data, {
+        nullableFields: this.nullableFields,
+        protectedFields: this.protectedFields,
+        allowedFields: this.allowedFields,
+      });
+      // Check if there's any data left after processing
+      if (Object.keys(processedData).length === 0) {
+        throw new Error(
+          "No valid data provided after filtering protected fields"
+        );
+      }
 
-      // Get full document for history
+      await this.validateUnique(processedData, id);
+
       const document = await this.getFullDocument(id);
 
       if (this.useHistory && user) {
         const historyRecord = createHistoryRecord(
           user,
-          normalizedData,
+          processedData,
           "update"
         );
-        normalizedData.updateHistory = mergeHistory(
+        processedData.updateHistory = mergeHistory(
           document.updateHistory,
           historyRecord
         );
@@ -302,7 +338,7 @@ class BaseService {
 
       const updated = await this.model.findByIdAndUpdate(
         id,
-        { $set: normalizedData },
+        { $set: processedData },
         {
           new: true,
           runValidators: true,
@@ -315,7 +351,6 @@ class BaseService {
       return this.processResponse(updated);
     } catch (error) {
       await this.endTransaction(session, false);
-      this.logger.error(`Error updating ${this.serviceName}`, error);
       throw error;
     }
   }
@@ -360,7 +395,6 @@ class BaseService {
       return this.processResponse(updated);
     } catch (error) {
       await this.endTransaction(session, false);
-      this.logger.error(`Error updating ${this.serviceName} status`, error);
       throw error;
     }
   }
@@ -373,7 +407,7 @@ class BaseService {
 
     try {
       const document = await this.getFullDocument(id);
-      await this.validateDelete(document);
+      await this.validateDelete(document, user);
 
       await document.deleteOne({ session });
       await this.endTransaction(session, true);
@@ -386,7 +420,6 @@ class BaseService {
       return { message: `${this.serviceName} deleted successfully` };
     } catch (error) {
       await this.endTransaction(session, false);
-      this.logger.error(`Error deleting ${this.serviceName}`, error);
       throw error;
     }
   }
@@ -433,13 +466,21 @@ class BaseService {
    * Validation Methods
    */
   async validateUnique(data, excludeId = null) {
+    const checkFields = [];
+    //Check for duplicates...
+    await Promise.all(checkFields);
+  }
+
+  /**
+   * Validation Methods
+   */
+  async validateDelete(document, requestUser) {
     return true;
   }
 
-  async validateDelete(document) {
-    return true;
-  }
-
+  /**
+   * validateStatusChange - to be overridden by child classes
+   */
   async validateStatusChange(document, status) {
     return await validateStatusChange(document, status);
   }
@@ -470,19 +511,14 @@ class BaseService {
    * Process response to exclude unnecessary fields
    */
   processResponse(document) {
-    if (!document) return null;
+    return processResponse(document, this.excludeFields);
+  }
 
-    if (Array.isArray(document)) {
-      return document.map((doc) => {
-        const obj = doc.toObject({ getters: true });
-        this.excludeFields.forEach((field) => delete obj[field]);
-        return obj;
-      });
-    }
-
-    const obj = document.toObject({ getters: true });
-    this.excludeFields.forEach((field) => delete obj[field]);
-    return obj;
+  /**
+   *  Check for duplicate entries
+   * */
+  checkDuplicate(conditions, excludeId = null, message = null) {
+    return checkDuplicate(this.model, conditions, excludeId, message);
   }
 
   /**

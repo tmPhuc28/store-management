@@ -192,10 +192,6 @@ const supplierSchema = new mongoose.Schema(
 );
 
 // Virtuals
-supplierSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 supplierSchema.virtual("fullAddress").get(function () {
   if (!this.address || typeof this.address !== "object") return null;
   const addressParts = [

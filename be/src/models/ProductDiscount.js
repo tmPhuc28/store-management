@@ -107,10 +107,6 @@ const productDiscountSchema = new mongoose.Schema(
 );
 
 // Virtuals
-productDiscountSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 productDiscountSchema.virtual("isActive").get(function () {
   if (this.status !== 1) return false;
 

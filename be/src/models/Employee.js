@@ -128,10 +128,6 @@ employeeSchema.virtual("age").get(function () {
   return age;
 });
 
-employeeSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 // Middleware to sync User status if exists
 employeeSchema.pre("save", async function (next) {
   if (this.isModified("status") && this.userId) {

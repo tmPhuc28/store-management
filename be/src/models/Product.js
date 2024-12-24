@@ -255,10 +255,6 @@ const productSchema = new mongoose.Schema(
 );
 
 // Virtuals
-productSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 productSchema.virtual("thumbnail").get(function () {
   const thumbnail = this.images?.find((img) => img.isThumbnail);
   return thumbnail?.url || this.images?.[0]?.url || null;

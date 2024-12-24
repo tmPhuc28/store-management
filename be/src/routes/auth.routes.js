@@ -1,7 +1,7 @@
 // src/routes/auth.routes.js
 const BaseRouter = require("./base/base.router");
 const AuthController = require("../controllers/auth.controller");
-const { protect, preventLoggedInAccess } = require("../middleware/auth");
+const { preventLoggedInAccess } = require("../middleware/auth");
 const {
   registerValidator,
   loginValidator,

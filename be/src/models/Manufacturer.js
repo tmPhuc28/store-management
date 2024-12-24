@@ -154,10 +154,6 @@ const manufacturerSchema = new mongoose.Schema(
 );
 
 // Virtuals
-manufacturerSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 manufacturerSchema.virtual("fullAddress").get(function () {
   if (!this.address || typeof this.address !== "object") return null;
   const addressParts = [

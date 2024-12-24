@@ -2,7 +2,6 @@
 const BaseService = require("./base/base.service");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
-const { checkDuplicate } = require("../utils/duplicateCheck");
 
 class AuthService extends BaseService {
   constructor() {
@@ -12,13 +11,13 @@ class AuthService extends BaseService {
       ...this.excludeFields,
       "password",
       "refreshTokens",
+      "resetPasswordToken",
+      "resetPasswordExpire",
+      "passwordChangedAt",
       "role",
       "lastLogin",
-      "createdAt",
-      "updatedAt",
-      "_id",
-      "id",
       "status",
+      "id",
     ];
   }
 
@@ -30,10 +29,7 @@ class AuthService extends BaseService {
     try {
       session = await this.startTransaction();
       // Check for existing user
-      await Promise.all([
-        this.validateUnique({ email: data.email }),
-        this.validateUnique({ username: data.username }),
-      ]);
+      await this.validateUnique(data);
 
       // Force role to be user (0) for registration
       const userData = {
@@ -276,8 +272,7 @@ class AuthService extends BaseService {
 
     if (data.username) {
       checkFields.push(
-        checkDuplicate(
-          this.model,
+        this.checkDuplicate(
           { username: data.username.toLowerCase() },
           excludeId,
           "Username already in use"
@@ -287,8 +282,7 @@ class AuthService extends BaseService {
 
     if (data.email) {
       checkFields.push(
-        checkDuplicate(
-          this.model,
+        this.checkDuplicate(
           { email: data.email.toLowerCase() },
           excludeId,
           "Email already in use"

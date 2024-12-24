@@ -117,9 +117,6 @@ const customerSchema = new mongoose.Schema(
 );
 
 // Virtuals
-customerSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
 
 customerSchema.virtual("fullAddress").get(function () {
   if (!this.address || typeof this.address !== "object") return null;

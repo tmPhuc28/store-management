@@ -106,10 +106,6 @@ const invoiceDiscountSchema = new mongoose.Schema(
 );
 
 // Virtuals
-invoiceDiscountSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
-
 invoiceDiscountSchema.virtual("isActive").get(function () {
   if (this.status !== 1) return false;
 

@@ -1,5 +1,22 @@
 // src/validators/user.validator.js
-const { body, validationResult } = require("express-validator");
+const { body } = require("express-validator");
+
+// Validator for protected fields
+const protectedFieldsValidator = body(
+  "status",
+  "refreshTokens",
+  "resetPasswordToken",
+  "resetPasswordExpire",
+  "passwordChangedAt",
+  "lastLogin",
+  "updateHistory",
+  "createdAt",
+  "updatedAt",
+  "__v"
+)
+  .not()
+  .exists()
+  .withMessage("Cannot modify protected fields through this endpoint");
 
 // User update validation
 exports.updateUserValidator = [
@@ -31,16 +48,7 @@ exports.updateUserValidator = [
     .isMongoId()
     .withMessage("Invalid employee ID format"),
 
-  // Prevent updating sensitive fields
-  body([
-    "password",
-    "refreshTokens",
-    "resetPasswordToken",
-    "resetPasswordExpire",
-  ])
-    .not()
-    .exists()
-    .withMessage("Cannot update sensitive fields through this endpoint"),
+  protectedFieldsValidator,
 ];
 
 // User create validation
@@ -77,13 +85,5 @@ exports.createUserValidator = [
     .withMessage("Invalid role value")
     .toInt(),
 
-  body([
-    "employee",
-    "refreshTokens",
-    "resetPasswordToken",
-    "resetPasswordExpire",
-  ])
-    .not()
-    .exists()
-    .withMessage("Cannot update sensitive fields through this endpoint"),
+  protectedFieldsValidator,
 ];

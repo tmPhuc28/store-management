@@ -74,9 +74,6 @@ const categorySchema = new mongoose.Schema(
 );
 
 // Virtuals
-categorySchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
-});
 
 categorySchema.virtual("fullPath").get(function () {
   if (!this.populated("path")) return null;

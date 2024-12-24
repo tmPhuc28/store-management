@@ -67,9 +67,24 @@ const userSchema = new mongoose.Schema(
       ipAddress: String,
       userAgent: String,
     },
-    passwordChangedAt: Date,
-    resetPasswordToken: String,
-    resetPasswordExpire: Date,
+    passwordChangedAt: {
+      type: Date,
+      select: false,
+      default: null,
+    },
+    resetPasswordToken: {
+      type: String,
+      select: false,
+    },
+    resetPasswordExpire: {
+      type: Date,
+      select: false,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     updateHistory: [
       {
         action: String,
@@ -88,18 +103,28 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    toJSON: {
+      transform: function (doc, ret) {
+        delete ret.password;
+        delete ret.refreshTokens;
+        return ret;
+      },
+      virtuals: true,
+    },
+    toObject: {
+      transform: function (doc, ret) {
+        delete ret.password;
+        delete ret.refreshTokens;
+        return ret;
+      },
+      virtuals: true,
+    },
   }
 );
 
 // Virtual
 userSchema.virtual("roleText").get(function () {
   return this.role === 1 ? "admin" : "user";
-});
-
-userSchema.virtual("statusText").get(function () {
-  return this.status === 1 ? "active" : "inactive";
 });
 
 userSchema.virtual("lastLoginAgo").get(function () {

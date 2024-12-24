@@ -1,21 +1,24 @@
 // src/validators/auth.validator.js
 const { body } = require("express-validator");
 
-/**
- * Common password validation rules
- */
-const passwordRules = [
-  body("password")
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters long")
-    .matches(/\d/)
-    .withMessage("Password must contain at least one number")
-    .matches(/[a-zA-Z]/)
-    .withMessage("Password must contain at least one letter")
-    .not()
-    .equals("password123")
-    .withMessage("Password is too common"),
-];
+// Validator for protected fields
+const protectedFieldsValidator = body(
+  "role",
+  "status",
+  "employee",
+  "refreshTokens",
+  "resetPasswordToken",
+  "resetPasswordExpire",
+  "updateHistory",
+  "passwordChangedAt",
+  "lastLogin",
+  "createdAt",
+  "updatedAt",
+  "__v"
+)
+  .not()
+  .exists()
+  .withMessage("Cannot modify protected fields through this endpoint");
 
 /**
  * Registration validation rules
@@ -43,31 +46,18 @@ exports.registerValidator = [
     .toLowerCase(),
 
   // Password validation
-  ...passwordRules,
-
-  // Role validation (optional)
-  body("role")
-    .optional()
-    .isIn([0, 1])
-    .withMessage("Invalid role specified")
-    .toInt(),
-
-  // Status validation (optional)
-  body("status")
-    .optional()
-    .isIn([0, 1])
-    .withMessage("Status must be either 0 (inactive) or 1 (active)")
-    .toInt(),
-
-  body([
-    "employee",
-    "refreshTokens",
-    "resetPasswordToken",
-    "resetPasswordExpire",
-  ])
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters long")
+    .matches(/\d/)
+    .withMessage("Password must contain at least one number")
+    .matches(/[a-zA-Z]/)
+    .withMessage("Password must contain at least one letter")
     .not()
-    .exists()
-    .withMessage("Cannot update sensitive fields through this endpoint"),
+    .equals("password123")
+    .withMessage("Password is too common"),
+
+  protectedFieldsValidator,
 ];
 
 /**
@@ -188,14 +178,5 @@ exports.emailChangeValidator = [
     .withMessage("Password is required for verification"),
 ];
 
-/**
- * Status update validation
- */
-exports.statusUpdateValidator = [
-  body("status")
-    .notEmpty()
-    .withMessage("Status is required")
-    .isIn([0, 1])
-    .withMessage("Status must be either 0 (inactive) or 1 (active)")
-    .toInt(),
-];
+// Export for reuse in other validators
+module.exports.protectedFieldsValidator = protectedFieldsValidator;

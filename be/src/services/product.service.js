@@ -7,7 +7,6 @@ const Supplier = require("../models/Supplier");
 const { checkDuplicate } = require("../utils/duplicateCheck");
 const generateBarcode = require("../utils/barcodeGenerator");
 const QRCode = require("qrcode");
-const ProductLocationService = require("./productLocation.service");
 
 class ProductService extends BaseService {
   constructor() {
@@ -26,7 +25,6 @@ class ProductService extends BaseService {
     this.useHistory = true;
     this.useTransactions = true;
     this.excludeFields = [...this.excludeFields];
-    this.locationService = ProductLocationService;
   }
 
   getSearchFields() {

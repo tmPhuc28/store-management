@@ -1,6 +1,7 @@
 // src/routes/base/base.router.js
 const express = require("express");
 const { protect, authorize } = require("../../middleware/auth");
+const { validateRequest } = require("../../middleware/validateRequest");
 const {
   paginationValidator,
   sortValidator,
@@ -67,6 +68,7 @@ class BaseRouter {
           sortValidator,
           searchValidator,
           ...(this.validators.getAll || []),
+          validateRequest,
         ],
         this.controller.getAll
       );
@@ -77,7 +79,11 @@ class BaseRouter {
       this.router.get(
         "/:id",
         routes.getOne.protected ? this.protected() : [],
-        [objectIdValidator("id"), ...(this.validators.getOne || [])],
+        [
+          objectIdValidator("id"),
+          ...(this.validators.getOne || []),
+          validateRequest,
+        ],
         this.controller.getOne
       );
     }
@@ -92,6 +98,7 @@ class BaseRouter {
           paginationValidator,
           sortValidator,
           ...(this.validators.getHistory || []),
+          validateRequest,
         ],
         this.controller.getHistory
       );
@@ -106,6 +113,7 @@ class BaseRouter {
           objectIdValidator("id"),
           objectIdValidator("historyId"),
           ...(this.validators.deleteHistoryEntry || []),
+          validateRequest,
         ],
         this.controller.deleteHistoryEntry
       );
@@ -116,7 +124,11 @@ class BaseRouter {
       this.router.delete(
         "/:id/history",
         this.protected(),
-        [objectIdValidator("id"), ...(this.validators.clearHistory || [])],
+        [
+          objectIdValidator("id"),
+          ...(this.validators.clearHistory || []),
+          validateRequest,
+        ],
         this.controller.clearHistory
       );
     }
@@ -127,6 +139,7 @@ class BaseRouter {
         "/",
         routes.create.protected ? this.protected() : [],
         this.validators.create || [],
+        validateRequest,
         this.controller.create
       );
     }
@@ -136,7 +149,11 @@ class BaseRouter {
       this.router.put(
         "/:id",
         routes.update.protected ? this.protected() : [],
-        [objectIdValidator("id"), ...(this.validators.update || [])],
+        [
+          objectIdValidator("id"),
+          ...(this.validators.update || []),
+          validateRequest,
+        ],
         this.controller.update
       );
     }
@@ -150,6 +167,7 @@ class BaseRouter {
           objectIdValidator("id"),
           statusValidator,
           ...(this.validators.updateStatus || []),
+          validateRequest,
         ],
         this.controller.updateStatus
       );
@@ -160,7 +178,11 @@ class BaseRouter {
       this.router.delete(
         "/:id",
         routes.delete.protected ? this.protected() : [],
-        [objectIdValidator("id"), ...(this.validators.delete || [])],
+        [
+          objectIdValidator("id"),
+          ...(this.validators.delete || []),
+          validateRequest,
+        ],
         this.controller.delete
       );
     }
@@ -178,8 +200,8 @@ class BaseRouter {
    */
   customRouter(method, path, handler, validators = [], isProtected = true) {
     const middleware = isProtected
-      ? [...this.protected(), ...validators]
-      : [...validators];
+      ? [...this.protected(), ...validators, validateRequest]
+      : [...validators, validateRequest];
     this.router[method](path, middleware, handler);
     return this;
   }
