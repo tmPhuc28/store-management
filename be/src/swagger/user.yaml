@@ -288,6 +288,10 @@ paths:
                   type: string
                   format: email
                   description: Must be a valid and unique email address
+                password:
+                  type: string
+                  format: password
+                  description: Password must be at least 6 characters
                 role:
                   type: integer
                   enum: [0, 1]
@@ -296,8 +300,9 @@ paths:
                   type: string
                   description: Employee reference ID (MongoDB ObjectId)
               example:
-                username: "john_doe"
-                email: "john.doe@example.com"
+                username: "user"
+                email: "user@example.com"
+                password: "123456a"
                 role: 0
                 employee: "60d6ec9f1233d62b9cef4567"
       responses:

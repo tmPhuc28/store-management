@@ -174,15 +174,32 @@ userSchema.pre("save", async function (next) {
     return next();
   }
 
-  const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_SALT));
-  this.password = await bcrypt.hash(this.password, salt);
+  this.password = await this.hashPassword(this.password);
 
-  if (this.isModified("password") && !this.isNew) {
+  if (!this.isNew) {
     this.passwordChangedAt = Date.now();
   }
-
   next();
 });
+
+userSchema.methods.hashPassword = async function (password) {
+  const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_SALT));
+  return await bcrypt.hash(password, salt);
+};
+
+userSchema.statics.hashPasswordIfChanged = async function (data) {
+  if (!data.password) return data;
+
+  // Tạo temp user để sử dụng instance method
+  const tempUser = new this();
+  const hashedPassword = await tempUser.hashPassword(data.password);
+
+  return {
+    ...data,
+    password: hashedPassword,
+    passwordChangedAt: new Date(),
+  };
+};
 
 // Sync status with employee
 userSchema.pre("save", async function (next) {

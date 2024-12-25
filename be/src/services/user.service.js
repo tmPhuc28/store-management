@@ -73,7 +73,9 @@ class UserService extends BaseService {
       }
       await this.validateRelatedEntities(data);
 
-      const result = await super.update(id, data, user, {
+      const processedData = await this.model.hashPasswordIfChanged(data);
+
+      const result = await super.update(id, processedData, user, {
         ...options,
         session,
       });
